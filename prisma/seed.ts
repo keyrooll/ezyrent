@@ -294,7 +294,7 @@ async function main() {
   // Payment: Fatimah (VERIFIED penuh)
   let payFatimah = await prisma.payment.findFirst({ where: { landlord_id: landlord.id, invoice_id: invFatimah.id } });
   if (!payFatimah) {
-    await prisma.payment.create({
+    payFatimah = await prisma.payment.create({
       data: {
         landlord_id: landlord.id, invoice_id: invFatimah.id, tenant_id: fatimah.id,
         amount: 1500, method: PaymentMethod.BANK_TRANSFER, reference_no: "TRF20260803",
@@ -306,7 +306,7 @@ async function main() {
   // Payment: Kamal (VERIFIED separa)
   let payKamal = await prisma.payment.findFirst({ where: { landlord_id: landlord.id, invoice_id: invKamal.id } });
   if (!payKamal) {
-    await prisma.payment.create({
+    payKamal = await prisma.payment.create({
       data: {
         landlord_id: landlord.id, invoice_id: invKamal.id, tenant_id: kamal.id,
         amount: 600, method: PaymentMethod.CASH, status: PaymentStatus.VERIFIED,
