@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Building2, DoorOpen, Users, Wallet, Clock } from "lucide-react";
 import { requireLandlord } from "@/lib/sesi";
 import { formatRM, formatTarikhPendek } from "@/lib/format";
+import { CartaKutipan, type TitikKutipan } from "@/components/dashboard/carta-kutipan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const { db } = await requireLandlord();
 
-  const [bilHartanah, bilUnit, bilKosong, bilPenyewa, statInvois, kutipanBulan, menungguSah] =
+  const [bilHartanah, bilUnit, bilKosong, bilPenyewa, statInvois, kutipanBulan, menungguSah, kutipan6Bulan] =
     await Promise.all([
       db.property.count(),
       db.unit.count(),
@@ -35,9 +36,36 @@ export default async function DashboardPage() {
         orderBy: { created_at: "desc" },
         take: 5,
       }),
+      db.payment.findMany({
+        where: {
+          status: "VERIFIED",
+          verified_at: {
+            gte: new Date(new Date().getFullYear(), new Date().getMonth() - 5, 1),
+          },
+        },
+        select: { amount: true, verified_at: true },
+      }),
     ]);
 
   const belumTerima = Number(statInvois._sum.amount ?? 0) - Number(statInvois._sum.paid_amount ?? 0);
+
+  // Kumpulkan kutipan VERIFIED ikut bulan (6 bulan terakhir)
+  const labelBulan = new Intl.DateTimeFormat("ms-MY", { month: "short" });
+  const petaBulan = new Map<string, number>();
+  const sekarang = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(sekarang.getFullYear(), sekarang.getMonth() - i, 1);
+    petaBulan.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, 0);
+  }
+  for (const p of kutipan6Bulan) {
+    if (!p.verified_at) continue;
+    const kunci = `${p.verified_at.getFullYear()}-${String(p.verified_at.getMonth() + 1).padStart(2, "0")}`;
+    if (petaBulan.has(kunci)) petaBulan.set(kunci, (petaBulan.get(kunci) ?? 0) + Number(p.amount));
+  }
+  const dataCarta: TitikKutipan[] = [...petaBulan.entries()].map(([kunci, jumlah]) => {
+    const [tahun, bulan] = kunci.split("-").map(Number);
+    return { bulan: labelBulan.format(new Date(tahun, bulan - 1, 1)), jumlah };
+  });
 
   const kad = [
     { label: "Hartanah", nilai: String(bilHartanah), ikon: Building2 },
@@ -69,6 +97,16 @@ export default async function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {/* Carta kutipan */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Kutipan Sewa 6 Bulan</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CartaKutipan data={dataCarta} />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Menunggu pengesahan */}

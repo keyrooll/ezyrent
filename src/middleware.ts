@@ -13,9 +13,11 @@ export default auth((req) => {
   const { nextUrl } = req;
   const user = req.auth?.user;
 
-  // Belum log masuk → halaman login
+  // Belum log masuk → halaman login (halaman login & daftar dibenarkan)
   if (!user) {
-    if (nextUrl.pathname.startsWith("/daftar")) return NextResponse.next();
+    if (nextUrl.pathname === "/login" || nextUrl.pathname.startsWith("/daftar")) {
+      return NextResponse.next();
+    }
     return NextResponse.redirect(new URL("/login", nextUrl));
   }
 

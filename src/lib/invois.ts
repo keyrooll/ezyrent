@@ -7,10 +7,12 @@ import { prisma } from "@/lib/prisma";
  * berganda — panggilan berulang (cron, butang manual) selamat.
  */
 export async function janaInvoisBulanan(sekarang = new Date()): Promise<number> {
-  const tahun = sekarang.getFullYear();
-  const bulan = sekarang.getMonth();
-  const periodStart = new Date(tahun, bulan, 1);
-  const periodEnd = new Date(tahun, bulan + 1, 0); // hari terakhir bulan
+  // Guna UTC supaya konsisten dengan data seed — idempotensi [tenancy, period]
+  // bergantung pada nilai period_start yang sama
+  const tahun = sekarang.getUTCFullYear();
+  const bulan = sekarang.getUTCMonth();
+  const periodStart = new Date(Date.UTC(tahun, bulan, 1));
+  const periodEnd = new Date(Date.UTC(tahun, bulan + 1, 0)); // hari terakhir bulan
 
   const tenancies = await prisma.tenancy.findMany({
     where: {
@@ -24,8 +26,8 @@ export async function janaInvoisBulanan(sekarang = new Date()): Promise<number> 
 
   for (const t of tenancies) {
     // Hari due: rent_due_day bulan semasa, clamp ke akhir bulan
-    const hariDue = Math.min(t.rent_due_day, periodEnd.getDate());
-    const dueDate = new Date(tahun, bulan, hariDue);
+    const hariDue = Math.min(t.rent_due_day, periodEnd.getUTCDate());
+    const dueDate = new Date(Date.UTC(tahun, bulan, hariDue));
 
     try {
       const no = await noInvoisSeterusnya(t.landlord_id, tahun);

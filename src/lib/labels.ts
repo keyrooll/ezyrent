@@ -12,6 +12,19 @@ import type {
 } from "@prisma/client";
 
 /** Label Bahasa Melayu untuk semua enum — sumber tunggal untuk UI */
+export type {
+  InvoiceStatus,
+  LandlordStatus,
+  PaymentMethod,
+  PaymentStatus,
+  PropertyStatus,
+  PropertyType,
+  TenancyStatus,
+  TenantStatus,
+  UnitStatus,
+  InvitationStatus,
+};
+
 export const LABEL_INVOIS: Record<InvoiceStatus, string> = {
   PENDING: "Belum Bayar",
   PARTIAL: "Bayaran Separa",

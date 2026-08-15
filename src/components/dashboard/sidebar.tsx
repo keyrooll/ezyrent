@@ -2,7 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Building2, DoorOpen, Users, FileText, Wallet, Send } from "lucide-react";
+import {
+  LayoutDashboard,
+  Building2,
+  DoorOpen,
+  Users,
+  FileText,
+  Wallet,
+  Send,
+  Bell,
+  ScrollText,
+  UserCog,
+  CreditCard,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Item navigasi sidebar — halaman ditambah ikut fasa pembangunan */
@@ -14,6 +26,10 @@ const NAV = [
   { href: "/dashboard/invois", label: "Invois", ikon: FileText },
   { href: "/dashboard/pembayaran", label: "Pembayaran", ikon: Wallet },
   { href: "/dashboard/jemputan", label: "Jemputan", ikon: Send },
+  { href: "/dashboard/notifikasi", label: "Notifikasi", ikon: Bell },
+  { href: "/dashboard/audit", label: "Audit Log", ikon: ScrollText },
+  { href: "/dashboard/staf", label: "Staf", ikon: UserCog },
+  { href: "/dashboard/langganan", label: "Langganan", ikon: CreditCard },
 ];
 
 export function Sidebar() {
