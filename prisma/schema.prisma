@@ -240,6 +240,7 @@ model Unit {
   property    Property     @relation(fields: [property_id], references: [id])
   tenancies   Tenancy[]
   invitations Invitation[]
+  invoices    RentInvoice[]
 
   @@index([landlord_id, property_id])
   @@index([landlord_id, status])
@@ -265,6 +266,7 @@ model Tenant {
   tenancies   Tenancy[]
   invitations Invitation[]
   payments    Payment[]
+  invoices    RentInvoice[]
   documents   Document[]
 
   @@index([landlord_id, status])

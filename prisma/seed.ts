@@ -104,9 +104,9 @@ async function main() {
   const pro = await prisma.subscriptionPlan.findUniqueOrThrow({ where: { code: "PRO" } });
   const trialEnd = daysFromNow(30);
 
-  let landlord = await prisma.landlord.findUnique({ where: { owner_id: owner.id } });
-  if (!landlord) {
-    landlord = await prisma.landlord.create({
+  const landlord =
+    (await prisma.landlord.findUnique({ where: { owner_id: owner.id } })) ??
+    (await prisma.landlord.create({
       data: {
         business_name: "Demo Sdn Bhd",
         email: "landlord@demo.my",
@@ -120,8 +120,7 @@ async function main() {
           create: { plan_id: pro.id, status: "TRIAL", trial_ends_at: trialEnd },
         },
       },
-    });
-  }
+    }));
   console.log("✓ Landlord: landlord@demo.my (Demo Sdn Bhd, trial PRO 30 hari)");
 
   // ---------- Demo staff ----------
