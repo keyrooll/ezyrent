@@ -1,0 +1,95 @@
+"use client";
+
+import { useActionState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { ArrowLeft } from "lucide-react";
+import { ciptaPenyewa, type HasilPenyewa } from "../actions";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+
+const awalan: HasilPenyewa = {};
+
+export default function PenyewaBaruPage() {
+  const router = useRouter();
+  const [hasil, tindakan, menunggu] = useActionState(ciptaPenyewa, awalan);
+
+  useEffect(() => {
+    if (hasil?.berjaya && !menunggu) {
+      toast.success("Penyewa berjaya ditambah");
+      router.push("/dashboard/penyewa");
+      router.refresh();
+    }
+  }, [hasil, menunggu, router]);
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <button
+        onClick={() => router.back()}
+        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-4" />
+        Kembali
+      </button>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Tambah Penyewa</CardTitle>
+          <CardDescription>Maklumat peribadi penyewa</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {hasil?.ralat && (
+            <p className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{hasil.ralat}</p>
+          )}
+          <form action={tindakan} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="nama">Nama Penuh</Label>
+              <Input id="nama" name="nama" placeholder="cth: Ahmad Ali" required />
+              {hasil?.medan?.nama && <p className="text-xs text-destructive">{hasil.medan.nama}</p>}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="email">E-mel</Label>
+                <Input id="email" name="email" type="email" placeholder="nama@contoh.my" />
+                {hasil?.medan?.email && <p className="text-xs text-destructive">{hasil.medan.email}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="telefon">No. Telefon</Label>
+                <Input id="telefon" name="telefon" placeholder="012-3456789" />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="noKad">No. Kad Pengenalan</Label>
+                <Input id="noKad" name="noKad" placeholder="900101-10-1234" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pekerjaan">Pekerjaan</Label>
+                <Input id="pekerjaan" name="pekerjaan" placeholder="cth: Jurutera" />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="namaKecemasan">Kontak Kecemasan (nama)</Label>
+                <Input id="namaKecemasan" name="namaKecemasan" placeholder="cth: Salmah" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="telefonKecemasan">Telefon Kecemasan</Label>
+                <Input id="telefonKecemasan" name="telefonKecemasan" placeholder="017-3334444" />
+              </div>
+            </div>
+
+            <Button type="submit" disabled={menunggu}>
+              {menunggu ? "Menyimpan..." : "Simpan Penyewa"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
