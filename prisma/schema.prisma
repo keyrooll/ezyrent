@@ -1,0 +1,454 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum UserRole {
+  SUPER_ADMIN
+  LANDLORD
+  STAFF
+  TENANT
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum LandlordStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+}
+
+enum PropertyStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum PropertyType {
+  APARTMENT
+  CONDO
+  TERRACE
+  SEMI_D
+  BUNGALOW
+  ROOM
+  SHOPLOT
+  OFFICE
+  COMMERCIAL
+  OTHER
+}
+
+enum UnitStatus {
+  VACANT
+  OCCUPIED
+  MAINTENANCE
+  RESERVED
+}
+
+enum TenantStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum TenancyStatus {
+  DRAFT
+  ACTIVE
+  ENDED
+  TERMINATED
+}
+
+enum InvoiceStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
+  WAIVED
+}
+
+enum PaymentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CASH
+  FPX
+  DUITNOW
+  CARD
+  OTHER
+}
+
+enum DocCategory {
+  PAYMENT_PROOF
+  OTHER
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+// ---------- Users & Roles ----------
+
+model User {
+  id               String     @id @default(cuid())
+  email            String     @unique
+  password_hash    String
+  name             String
+  phone            String?
+  role             UserRole   @default(TENANT)
+  status           UserStatus @default(ACTIVE)
+  created_at       DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime   @updatedAt @db.Timestamptz(6)
+
+  owned_landlord   Landlord?  @relation("LandlordOwner")
+  staff            Staff?
+  tenant           Tenant?
+  notifications    Notification[]
+  audit_logs       AuditLog[]
+  created_documents Document[]  @relation("DocumentUploader")
+  verified_payments Payment[]  @relation("PaymentVerifier")
+}
+
+model Landlord {
+  id              String         @id @default(cuid())
+  business_name   String
+  registration_no String?
+  email           String
+  phone           String?
+  address         String?
+  status          LandlordStatus @default(TRIAL)
+  owner_id        String         @unique
+  plan_code       String         @default("FREE")
+  unit_limit      Int            @default(3)
+  trial_ends_at   DateTime?      @db.Timestamptz(6)
+  plan_started_at DateTime?      @db.Timestamptz(6)
+  plan_expires_at DateTime?      @db.Timestamptz(6)
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime       @updatedAt @db.Timestamptz(6)
+
+  owner            User              @relation("LandlordOwner", fields: [owner_id], references: [id])
+  properties       Property[]
+  units            Unit[]
+  tenants          Tenant[]
+  tenancies        Tenancy[]
+  invoices         RentInvoice[]
+  payments         Payment[]
+  invitations      Invitation[]
+  staff            Staff[]
+  property_staff   PropertyStaff[]
+  documents        Document[]
+  audit_logs       AuditLog[]
+  subscriptions    Subscription[]
+
+  @@index([status])
+}
+
+model Staff {
+  id          String     @id @default(cuid())
+  user_id     String     @unique
+  landlord_id String
+  permissions Json       @default("{}")
+  status      UserStatus @default(ACTIVE)
+  created_at  DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime   @updatedAt @db.Timestamptz(6)
+
+  user           User            @relation(fields: [user_id], references: [id])
+  landlord       Landlord        @relation(fields: [landlord_id], references: [id])
+  property_grants PropertyStaff[]
+
+  @@index([landlord_id, status])
+}
+
+model PropertyStaff {
+  id          String   @id @default(cuid())
+  landlord_id String
+  property_id String
+  staff_id    String
+  can_view    Boolean  @default(true)
+  can_edit    Boolean  @default(false)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  landlord Landlord @relation(fields: [landlord_id], references: [id])
+  property Property @relation(fields: [property_id], references: [id])
+  staff    Staff    @relation(fields: [staff_id], references: [id])
+
+  @@unique([staff_id, property_id])
+  @@index([landlord_id])
+}
+
+// ---------- Property Hierarchy ----------
+
+model Property {
+  id          String         @id @default(cuid())
+  landlord_id String
+  name        String
+  type        PropertyType   @default(TERRACE)
+  street      String
+  city        String
+  state       String
+  postcode    String
+  description String?
+  status      PropertyStatus @default(ACTIVE)
+  created_at  DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime       @updatedAt @db.Timestamptz(6)
+
+  landlord       Landlord        @relation(fields: [landlord_id], references: [id])
+  units          Unit[]
+  staff_grants   PropertyStaff[]
+
+  @@index([landlord_id, status])
+}
+
+model Unit {
+  id             String     @id @default(cuid())
+  landlord_id    String
+  property_id    String
+  unit_no        String
+  floor          String?
+  size_sqm       Int?
+  bedrooms       Int?
+  bathrooms      Int?
+  rent_amount    Decimal    @db.Decimal(18, 2)
+  deposit_amount Decimal    @default(0) @db.Decimal(18, 2)
+  status         UnitStatus @default(VACANT)
+  notes          String?
+  created_at     DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime   @updatedAt @db.Timestamptz(6)
+
+  landlord    Landlord     @relation(fields: [landlord_id], references: [id])
+  property    Property     @relation(fields: [property_id], references: [id])
+  tenancies   Tenancy[]
+  invitations Invitation[]
+
+  @@index([landlord_id, property_id])
+  @@index([landlord_id, status])
+}
+
+model Tenant {
+  id                String       @id @default(cuid())
+  landlord_id       String
+  user_id           String?      @unique
+  name              String
+  email             String?
+  phone             String?
+  ic_no             String?
+  occupation        String?
+  emergency_contact String?
+  emergency_phone   String?
+  status            TenantStatus @default(ACTIVE)
+  created_at        DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime     @updatedAt @db.Timestamptz(6)
+
+  landlord    Landlord     @relation(fields: [landlord_id], references: [id])
+  user        User?        @relation(fields: [user_id], references: [id])
+  tenancies   Tenancy[]
+  invitations Invitation[]
+  payments    Payment[]
+  documents   Document[]
+
+  @@index([landlord_id, status])
+}
+
+model Invitation {
+  id                 String           @id @default(cuid())
+  landlord_id        String
+  unit_id            String
+  tenant_email       String
+  tenant_phone       String?
+  token              String           @unique
+  status             InvitationStatus @default(PENDING)
+  expires_at         DateTime         @db.Timestamptz(6)
+  invited_by_user_id String
+  tenant_id          String?
+  created_at         DateTime         @default(now()) @db.Timestamptz(6)
+  accepted_at        DateTime?        @db.Timestamptz(6)
+
+  landlord Landlord @relation(fields: [landlord_id], references: [id])
+  unit     Unit     @relation(fields: [unit_id], references: [id])
+  tenant   Tenant?  @relation(fields: [tenant_id], references: [id])
+
+  @@index([landlord_id, status])
+}
+
+model Tenancy {
+  id             String         @id @default(cuid())
+  landlord_id    String
+  unit_id        String
+  tenant_id      String
+  start_date     DateTime       @db.Date
+  end_date       DateTime?      @db.Date
+  rent_amount    Decimal        @db.Decimal(18, 2)
+  deposit_amount Decimal        @default(0) @db.Decimal(18, 2)
+  rent_due_day   Int            @default(1)
+  status         TenancyStatus  @default(DRAFT)
+  created_at     DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime       @updatedAt @db.Timestamptz(6)
+
+  landlord Landlord      @relation(fields: [landlord_id], references: [id])
+  unit     Unit          @relation(fields: [unit_id], references: [id])
+  tenant   Tenant        @relation(fields: [tenant_id], references: [id])
+  invoices RentInvoice[]
+
+  @@index([landlord_id, unit_id, status])
+  @@index([landlord_id, tenant_id])
+}
+
+// ---------- Rent & Payments ----------
+
+model RentInvoice {
+  id          String        @id @default(cuid())
+  landlord_id String
+  tenancy_id  String
+  unit_id     String
+  tenant_id   String
+  invoice_no  String        @unique
+  period_start DateTime     @db.Date
+  period_end  DateTime      @db.Date
+  due_date    DateTime      @db.Date
+  amount      Decimal       @db.Decimal(18, 2)
+  paid_amount Decimal       @default(0) @db.Decimal(18, 2)
+  status      InvoiceStatus @default(PENDING)
+  created_at  DateTime      @default(now()) @db.Timestamptz(6)
+  paid_at     DateTime?     @db.Timestamptz(6)
+
+  landlord Landlord  @relation(fields: [landlord_id], references: [id])
+  tenancy  Tenancy   @relation(fields: [tenancy_id], references: [id])
+  unit     Unit      @relation(fields: [unit_id], references: [id])
+  tenant   Tenant    @relation(fields: [tenant_id], references: [id])
+  payments Payment[]
+
+  @@unique([tenancy_id, period_start])
+  @@index([landlord_id, status, due_date])
+  @@index([landlord_id, tenant_id])
+}
+
+model Payment {
+  id                  String        @id @default(cuid())
+  landlord_id         String
+  invoice_id          String
+  tenant_id           String
+  amount              Decimal       @db.Decimal(18, 2)
+  method              PaymentMethod @default(BANK_TRANSFER)
+  reference_no        String?
+  status              PaymentStatus @default(PENDING)
+  rejection_reason    String?
+  verified_by_user_id String?
+  verified_at         DateTime?     @db.Timestamptz(6)
+  created_at          DateTime      @default(now()) @db.Timestamptz(6)
+
+  landlord      Landlord    @relation(fields: [landlord_id], references: [id])
+  invoice       RentInvoice @relation(fields: [invoice_id], references: [id])
+  tenant        Tenant      @relation(fields: [tenant_id], references: [id])
+  verified_by   User?       @relation("PaymentVerifier", fields: [verified_by_user_id], references: [id])
+  documents     Document[]
+
+  @@index([landlord_id, status])
+  @@index([invoice_id, status])
+}
+
+// ---------- Documents & Notifications ----------
+
+model Document {
+  id                String      @id @default(cuid())
+  landlord_id       String
+  uploader_user_id  String
+  tenant_id         String?
+  payment_id        String?
+  category          DocCategory @default(PAYMENT_PROOF)
+  original_name     String
+  stored_path       String
+  mime_type         String
+  size_bytes        Int
+  created_at        DateTime    @default(now()) @db.Timestamptz(6)
+
+  landlord Landlord @relation(fields: [landlord_id], references: [id])
+  uploader User     @relation("DocumentUploader", fields: [uploader_user_id], references: [id])
+  tenant   Tenant?  @relation(fields: [tenant_id], references: [id])
+  payment  Payment? @relation(fields: [payment_id], references: [id])
+
+  @@index([landlord_id, payment_id])
+  @@index([landlord_id, tenant_id])
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  user_id    String
+  type       String
+  title      String
+  body       String
+  is_read    Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id])
+
+  @@index([user_id, is_read])
+}
+
+// ---------- Subscription ----------
+
+model SubscriptionPlan {
+  id        String  @id @default(cuid())
+  code      String  @unique
+  name      String
+  price_myr Decimal @db.Decimal(18, 2)
+  unit_limit Int
+  features  Json
+  is_active Boolean @default(true)
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id           String             @id @default(cuid())
+  landlord_id  String
+  plan_id      String
+  status       SubscriptionStatus @default(TRIAL)
+  started_at   DateTime           @default(now()) @db.Timestamptz(6)
+  trial_ends_at DateTime?         @db.Timestamptz(6)
+  renews_at    DateTime?          @db.Timestamptz(6)
+
+  landlord Landlord         @relation(fields: [landlord_id], references: [id])
+  plan     SubscriptionPlan @relation(fields: [plan_id], references: [id])
+
+  @@index([landlord_id, status])
+}
+
+// ---------- Audit ----------
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  actor_user_id String
+  landlord_id   String?
+  action        String
+  entity_type   String
+  entity_id     String
+  meta          Json?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  actor    User      @relation(fields: [actor_user_id], references: [id])
+  landlord Landlord? @relation(fields: [landlord_id], references: [id])
+
+  @@index([landlord_id, entity_type, entity_id])
+  @@index([actor_user_id])
+}

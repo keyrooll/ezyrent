@@ -1,0 +1,16 @@
+# Untuk mesin yang guna Docker. Mesin dev utama guna PostgreSQL tempatan (Homebrew).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ezyrent-db
+    environment:
+      POSTGRES_USER: ezyrent
+      POSTGRES_PASSWORD: ezyrent
+      POSTGRES_DB: ezyrent
+    ports:
+      - "5433:5432"
+    volumes:
+      - ezyrent_pgdata:/var/lib/postgresql/data
+
+volumes:
+  ezyrent_pgdata:
