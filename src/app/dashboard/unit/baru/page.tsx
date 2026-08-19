@@ -9,8 +9,14 @@ export default async function UnitBaruPage({
 }: {
   searchParams?: Promise<{ hartanah?: string }>;
 }) {
-  const { db } = await requireLandlord();
+  const { user, db } = await requireLandlord();
   const { hartanah } = (await searchParams) ?? {};
+
+  // Staf tidak dibenarkan tambah unit
+  if (user.role === "STAFF") {
+    redirect("/dashboard/unit");
+  }
+
   const senaraiHartanah = await db.property.findMany({ orderBy: { name: "asc" } });
 
   if (senaraiHartanah.length === 0) {

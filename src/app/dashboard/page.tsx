@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Building2, DoorOpen, Users, Wallet, Clock } from "lucide-react";
-import { requireLandlord } from "@/lib/sesi";
+import { Building2, DoorOpen, Home, CircleDashed, Users, Wallet, Banknote, Clock, Zap } from "lucide-react";
+import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { formatRM, formatTarikhPendek } from "@/lib/format";
 import { CartaKutipan, type TitikKutipan } from "@/components/dashboard/carta-kutipan";
+import { CartaDonut, HIJAU, OREN, MERAH } from "@/components/dashboard/carta-donut";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,16 +11,46 @@ import { Button } from "@/components/ui/button";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const { db } = await requireLandlord();
+  const { db, user } = await requireLandlord();
+  const skop = await skopHartanahStaf(db, user);
+  const skopHartanah = skop ? { unit: { property_id: { in: skop } } } : {};
+  const sekarang = new Date();
 
-  const [bilHartanah, bilUnit, bilKosong, bilPenyewa, statInvois, kutipanBulan, menungguSah, kutipan6Bulan] =
-    await Promise.all([
-      db.property.count(),
-      db.unit.count(),
-      db.unit.count({ where: { status: "VACANT" } }),
-      db.tenant.count({ where: { status: "ACTIVE" } }),
+  const [
+    bilHartanah,
+    bilUnit,
+    bilKosong,
+    bilDisewakan,
+    bilDahBayar,
+    bilPenyewa,
+    statInvois,
+    kutipanBulan,
+    menungguSah,
+    kutipan6Bulan,
+    statUtiliti,
+    bilDahDue,
+  ] = await Promise.all([
+      db.property.count({ where: skop ? { id: { in: skop } } : {} }),
+      db.unit.count({ where: skop ? { property_id: { in: skop } } : {} }),
+      db.unit.count({ where: { status: "VACANT", ...(skop ? { property_id: { in: skop } } : {}) } }),
+      db.unit.count({ where: { status: "OCCUPIED", ...(skop ? { property_id: { in: skop } } : {}) } }),
+      // Unit yang invois bulan semasa sudah PAID
+      db.rentInvoice.count({
+        where: {
+          status: "PAID",
+          period_start: { lte: sekarang },
+          period_end: { gte: sekarang },
+          ...skopHartanah,
+        },
+      }),
+      db.tenant.count({
+        where: {
+          status: "ACTIVE",
+          ...(skop ? { tenancies: { some: { unit: { property_id: { in: skop } } } } } : {}),
+        },
+      }),
       db.rentInvoice.aggregate({
-        where: { status: { in: ["PENDING", "PARTIAL", "OVERDUE"] } },
+        where: { status: { in: ["PENDING", "PARTIAL", "OVERDUE"] }, ...skopHartanah },
         _count: true,
         _sum: { amount: true, paid_amount: true },
       }),
@@ -27,11 +58,15 @@ export default async function DashboardPage() {
         where: {
           status: "VERIFIED",
           verified_at: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
+          ...(skop ? { invoice: { unit: { property_id: { in: skop } } } } : {}),
         },
         _sum: { amount: true },
       }),
       db.payment.findMany({
-        where: { status: "PENDING" },
+        where: {
+          status: "PENDING",
+          ...(skop ? { invoice: { unit: { property_id: { in: skop } } } } : {}),
+        },
         include: { tenant: { select: { name: true } }, invoice: { select: { invoice_no: true } } },
         orderBy: { created_at: "desc" },
         take: 5,
@@ -42,8 +77,23 @@ export default async function DashboardPage() {
           verified_at: {
             gte: new Date(new Date().getFullYear(), new Date().getMonth() - 5, 1),
           },
+          ...(skop ? { invoice: { unit: { property_id: { in: skop } } } } : {}),
         },
         select: { amount: true, verified_at: true },
+      }),
+      // Bil utiliti belum selesai (belum bayar / menunggu pengesahan)
+      db.utilityBil.aggregate({
+        where: {
+          status: { in: ["UNPAID", "PENDING_PROOF"] },
+          ...(skop ? { tenant: { tenancies: { some: { unit: { property_id: { in: skop } } } } } } : {}),
+        },
+        _sum: { amount: true },
+        _count: true,
+      }),
+      // Unit dengan invois dah due (merah dalam donut) — kira unit unik
+      db.rentInvoice.groupBy({
+        by: ["unit_id"],
+        where: { status: "OVERDUE", ...skopHartanah },
       }),
     ]);
 
@@ -52,7 +102,6 @@ export default async function DashboardPage() {
   // Kumpulkan kutipan VERIFIED ikut bulan (6 bulan terakhir)
   const labelBulan = new Intl.DateTimeFormat("ms-MY", { month: "short" });
   const petaBulan = new Map<string, number>();
-  const sekarang = new Date();
   for (let i = 5; i >= 0; i--) {
     const d = new Date(sekarang.getFullYear(), sekarang.getMonth() - i, 1);
     petaBulan.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, 0);
@@ -69,44 +118,66 @@ export default async function DashboardPage() {
 
   const kad = [
     { label: "Hartanah", nilai: String(bilHartanah), ikon: Building2 },
-    { label: "Unit", nilai: `${bilUnit} (${bilKosong} kosong)`, ikon: DoorOpen },
+    { label: "Unit", nilai: String(bilUnit), ikon: DoorOpen },
+    { label: "Unit Disewakan", nilai: String(bilDisewakan), ikon: Home },
+    { label: "Unit Kosong", nilai: String(bilKosong), ikon: CircleDashed },
     { label: "Penyewa Aktif", nilai: String(bilPenyewa), ikon: Users },
     { label: "Sewa Belum Diterima", nilai: formatRM(belumTerima), ikon: Wallet },
+    { label: "Kutipan Bulan Ini", nilai: formatRM(kutipanBulan._sum.amount), ikon: Banknote },
+    { label: "Menunggu Pengesahan", nilai: String(menungguSah.length), ikon: Clock },
+    { label: "Bil Utiliti Belum Selesai", nilai: formatRM(statUtiliti._sum.amount), ikon: Zap },
   ];
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Papan Pemuka</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
-          Kutipan bulan ini: <span className="font-medium text-foreground">{formatRM(kutipanBulan._sum.amount)}</span>
+          Gambaran keseluruhan hartanah dan kutipan sewa anda.
         </p>
       </div>
 
       {/* Kad KPI */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {kad.map(({ label, nilai, ikon: Ikon }) => (
-          <Card key={label}>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-              <Ikon className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-semibold tracking-tight">{nilai}</p>
-            </CardContent>
+          <Card key={label} className="px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-xs font-medium text-muted-foreground">{label}</span>
+              <Ikon className="size-3.5 shrink-0 text-muted-foreground" />
+            </div>
+            <p className="mt-1 text-lg font-semibold tracking-tight">{nilai}</p>
           </Card>
         ))}
       </div>
 
-      {/* Carta kutipan */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Kutipan Sewa 6 Bulan</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <CartaKutipan data={dataCarta} />
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 xl:grid-cols-2">
+        {/* Carta kutipan */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Kutipan Sewa 6 Bulan</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CartaKutipan data={dataCarta} />
+          </CardContent>
+        </Card>
+
+        {/* Donut disewakan vs dah bayar */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Unit Disewakan vs Dah Bayar</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CartaDonut
+              data={[
+                { nama: "Disewakan", nilai: bilDisewakan, warna: OREN },
+                { nama: "Dah Bayar", nilai: bilDahBayar, warna: HIJAU },
+                { nama: "Dah Due", nilai: bilDahDue.length, warna: MERAH },
+                { nama: "Kosong", nilai: bilKosong, warna: "#A1A1AA" },
+              ]}
+            />
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Menunggu pengesahan */}

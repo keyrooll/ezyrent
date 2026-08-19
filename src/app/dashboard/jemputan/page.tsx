@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { requireLandlord } from "@/lib/sesi";
+import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { formatTarikhPendek } from "@/lib/format";
 import { LABEL_JEMPUTAN } from "@/lib/labels";
 import { Button } from "@/components/ui/button";
@@ -24,9 +24,14 @@ const WARNA: Record<string, string> = {
 };
 
 export default async function JemputanPage() {
-  const { db } = await requireLandlord();
+  const { db, user } = await requireLandlord();
+  const skop = await skopHartanahStaf(db, user);
 
+  // Staf terhad: jemputan staf (tanpa unit) kekal kelihatan, jemputan penyewa mesti dalam skop
   const senarai = await db.invitation.findMany({
+    where: skop
+      ? { OR: [{ unit_id: null }, { unit: { property_id: { in: skop } } }] }
+      : {},
     include: {
       unit: { select: { unit_no: true, property: { select: { name: true } } } },
       tenant: { select: { name: true } },
@@ -61,6 +66,7 @@ export default async function JemputanPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>E-mel</TableHead>
+                <TableHead>Jenis</TableHead>
                 <TableHead>Unit</TableHead>
                 <TableHead>Dicipta</TableHead>
                 <TableHead>Luput</TableHead>
@@ -77,8 +83,17 @@ export default async function JemputanPage() {
                     {j.tenant && <span className="block text-xs text-muted-foreground">{j.tenant.name}</span>}
                   </TableCell>
                   <TableCell>
-                    {j.unit.property.name}
-                    <span className="block text-xs text-muted-foreground">{j.unit.unit_no}</span>
+                    <Badge variant="outline">{j.role === "STAFF" ? "Staf" : "Penyewa"}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    {j.unit ? (
+                      <>
+                        {j.unit.property.name}
+                        <span className="block text-xs text-muted-foreground">{j.unit.unit_no}</span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
                   <TableCell>{formatTarikhPendek(j.created_at)}</TableCell>
                   <TableCell>{formatTarikhPendek(j.expires_at)}</TableCell>

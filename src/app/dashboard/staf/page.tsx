@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { requireLandlord } from "@/lib/sesi";
 import { formatTarikh } from "@/lib/format";
 import { nyahaktifStaf } from "./actions";
 import { StafForm } from "./staf-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -18,6 +19,7 @@ export const dynamic = "force-dynamic";
 
 export default async function StafPage() {
   const { db, user } = await requireLandlord();
+  const bolehUrus = user.role === "LANDLORD";
 
   const senarai = await db.staff.findMany({
     include: { user: { select: { name: true, email: true } } },
@@ -54,7 +56,11 @@ export default async function StafPage() {
                 <TableBody>
                   {senarai.map((s) => (
                     <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.user.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <Link href={`/dashboard/staf/${s.id}`} className="text-primary hover:underline">
+                          {s.user.name}
+                        </Link>
+                      </TableCell>
                       <TableCell>{s.user.email}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatTarikh(s.created_at)}</TableCell>
                       <TableCell>
@@ -66,7 +72,7 @@ export default async function StafPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        {s.status === "ACTIVE" && (
+                        {bolehUrus && s.status === "ACTIVE" && (
                           <form action={nyahaktifStaf.bind(null, s.id)}>
                             <Button type="submit" size="sm" variant="outline" className="text-destructive hover:text-destructive">
                               Nyahaktifkan
@@ -82,14 +88,19 @@ export default async function StafPage() {
           )}
         </div>
 
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle className="text-base">Tambah Staf</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <StafForm />
-          </CardContent>
-        </Card>
+        {bolehUrus && (
+          <Card className="h-fit">
+            <CardHeader>
+              <CardTitle className="text-base">Tambah Staf</CardTitle>
+              <CardDescription className="text-xs">
+                Atau hantar jemputan staf melalui pautan di tab Jemputan
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <StafForm />
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

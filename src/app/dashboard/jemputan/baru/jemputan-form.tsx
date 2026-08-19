@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
@@ -12,8 +12,17 @@ import { Button } from "@/components/ui/button";
 
 const awalan: HasilJemputan = {};
 
-export function JemputanForm({ unit }: { unit: { id: string; label: string }[] }) {
+export function JemputanForm({
+  unit,
+  bolehJemputStaf,
+}: {
+  unit: { id: string; label: string }[];
+  bolehJemputStaf: boolean;
+}) {
   const router = useRouter();
+  const [jenis, setJenis] = useState<"TENANT" | "STAFF">(
+    bolehJemputStaf && unit.length === 0 ? "STAFF" : "TENANT"
+  );
   const [hasil, tindakan, menunggu] = useActionState(ciptaJemputan, awalan);
 
   // Ada ralat sahaja yang kembali ke sini — kejayaan redirect dalam action
@@ -37,7 +46,7 @@ export function JemputanForm({ unit }: { unit: { id: string; label: string }[] }
         <CardHeader>
           <CardTitle>Jemputan Baru</CardTitle>
           <CardDescription>
-            Penyewa akan menerima pautan untuk daftar sendiri. Anda juga boleh kongsikan kod QR.
+            Pautan sah selama 24 jam. Anda juga boleh kongsikan kod QR.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -45,24 +54,67 @@ export function JemputanForm({ unit }: { unit: { id: string; label: string }[] }
             <p className="mb-4 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{hasil.ralat}</p>
           )}
           <form action={tindakan} className="space-y-4">
+            {/* Jenis jemputan */}
             <div className="space-y-2">
-              <Label htmlFor="unitId">Unit</Label>
-              <select
-                id="unitId"
-                name="unitId"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                required
-              >
-                {unit.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.label}
-                  </option>
-                ))}
-              </select>
+              <Label>Jenis Jemputan</Label>
+              <div className="flex gap-2">
+                <label className="flex-1">
+                  <input
+                    type="radio"
+                    name="jenis"
+                    value="TENANT"
+                    checked={jenis === "TENANT"}
+                    onChange={() => setJenis("TENANT")}
+                    className="peer sr-only"
+                    disabled={unit.length === 0}
+                  />
+                  <span className="flex items-center justify-center rounded-md border border-input px-3 py-2 text-sm peer-checked:border-primary peer-checked:bg-primary/5 peer-checked:font-medium peer-disabled:opacity-40">
+                    Penyewa
+                  </span>
+                </label>
+                {bolehJemputStaf && (
+                  <label className="flex-1">
+                    <input
+                      type="radio"
+                      name="jenis"
+                      value="STAFF"
+                      checked={jenis === "STAFF"}
+                      onChange={() => setJenis("STAFF")}
+                      className="peer sr-only"
+                    />
+                    <span className="flex items-center justify-center rounded-md border border-input px-3 py-2 text-sm peer-checked:border-primary peer-checked:bg-primary/5 peer-checked:font-medium">
+                      Staf
+                    </span>
+                  </label>
+                )}
+              </div>
             </div>
 
+            {jenis === "TENANT" && (
+              <div className="space-y-2">
+                <Label htmlFor="unitId">Unit</Label>
+                <select
+                  id="unitId"
+                  name="unitId"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  required
+                >
+                  {unit.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
+                {hasil?.medan?.unitId && (
+                  <p className="text-xs text-destructive">{hasil.medan.unitId}</p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="email">E-mel Penyewa</Label>
+              <Label htmlFor="email">
+                E-mel {jenis === "TENANT" ? "Penyewa" : "Staf"}
+              </Label>
               <Input id="email" name="email" type="email" placeholder="nama@contoh.my" required />
               {hasil?.medan?.email && <p className="text-xs text-destructive">{hasil.medan.email}</p>}
             </div>

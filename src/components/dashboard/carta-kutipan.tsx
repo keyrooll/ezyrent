@@ -14,10 +14,17 @@ import { formatRM } from "@/lib/format";
 export type TitikKutipan = { bulan: string; jumlah: number };
 
 /** Carta kutipan sewa bulanan (klién — Recharts perlukan DOM) */
-export function CartaKutipan({ data }: { data: TitikKutipan[] }) {
+export function CartaKutipan({
+  data,
+  labelTooltip = "Kutipan",
+}: {
+  data: TitikKutipan[];
+  labelTooltip?: string;
+}) {
   return (
     <div className="h-64 w-full">
-      <ResponsiveContainer width="100%" height="100%">
+      {/* initialDimension — papar carta serta-merta sebelum ukuran sebenar diambil (HP) */}
+      <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 520, height: 256 }}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
           <XAxis
@@ -33,7 +40,7 @@ export function CartaKutipan({ data }: { data: TitikKutipan[] }) {
             tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
           />
           <Tooltip
-            formatter={(v) => [formatRM(Number(v)), "Kutipan"]}
+            formatter={(v) => [formatRM(Number(v)), labelTooltip]}
             cursor={{ fill: "var(--accent)" }}
             contentStyle={{
               borderRadius: 8,

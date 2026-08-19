@@ -51,6 +51,41 @@ export async function terimaJemputan(
 
   const hash = await bcrypt.hash(katalaluan, 10);
 
+  // Jemputan staf — cipta akaun STAFF + rekod Staff, tiada penyewa
+  if (jemputan.role === "STAFF") {
+    await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: { email, name: nama, phone: telefon || null, password_hash: hash, role: "STAFF" },
+      });
+      await tx.staff.create({
+        data: {
+          user_id: user.id,
+          landlord_id: jemputan.landlord_id,
+          permissions: {
+            properties: { view: true, edit: true },
+            tenants: { view: true, edit: true },
+            rent: { view: true, record: true, verify: true },
+            financial: { view: false },
+          },
+        },
+      });
+      await tx.invitation.update({
+        where: { id: jemputan.id },
+        data: { status: "ACCEPTED", accepted_at: new Date() },
+      });
+      await tx.notification.create({
+        data: {
+          user_id: jemputan.invited_by_user_id,
+          type: "INVITATION_ACCEPTED",
+          title: "Jemputan staf diterima",
+          body: `${nama} telah mendaftar sebagai staf melalui jemputan.`,
+        },
+      });
+    });
+
+    redirect("/login?berjaya=1");
+  }
+
   await prisma.$transaction(async (tx) => {
     // 1. Cipta akaun penyewa
     const user = await tx.user.create({
@@ -91,7 +126,7 @@ export async function terimaJemputan(
         user_id: jemputan.invited_by_user_id,
         type: "INVITATION_ACCEPTED",
         title: "Jemputan diterima",
-        body: `${nama} telah mendaftar melalui jemputan untuk ${jemputan.unit.property.name} (${jemputan.unit.unit_no}).`,
+        body: `${nama} telah mendaftar melalui jemputan untuk ${jemputan.unit!.property.name} (${jemputan.unit!.unit_no}).`,
       },
     });
   });

@@ -50,22 +50,27 @@ export default async function JemputanDetailPage({ params }: { params: Promise<{
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Jemputan Penyewa</CardTitle>
+            <CardTitle>{jemputan.role === "STAFF" ? "Jemputan Staf" : "Jemputan Penyewa"}</CardTitle>
             <Badge variant="outline" className={WARNA[jemputan.status]}>
               {LABEL_JEMPUTAN[jemputan.status]}
             </Badge>
           </div>
           <CardDescription>
-            {jemputan.tenant_email} • {jemputan.unit.property.name} ({jemputan.unit.unit_no})
+            {jemputan.tenant_email}
+            {jemputan.unit
+              ? ` • ${jemputan.unit.property.name} (${jemputan.unit.unit_no})`
+              : " • Akaun staf"}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {aktif ? (
             <>
-              {/* Kod QR untuk dikongsi kepada penyewa */}
+              {/* Kod QR untuk dikongsi */}
               <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-6">
                 <QRCodeSVG value={pautan} size={192} level="M" />
-                <p className="text-xs text-muted-foreground">Imbas untuk daftar sebagai penyewa</p>
+                <p className="text-xs text-muted-foreground">
+                  Imbas untuk daftar sebagai {jemputan.role === "STAFF" ? "staf" : "penyewa"}
+                </p>
               </div>
 
               <div className="flex items-center gap-2">

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, MapPin, Plus } from "lucide-react";
-import { requireLandlord } from "@/lib/sesi";
+import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { formatRM } from "@/lib/format";
 import { LABEL_JENIS_HARTANAH, LABEL_HARTANAH, LABEL_UNIT } from "@/lib/labels";
 import { Button } from "@/components/ui/button";
@@ -27,16 +27,27 @@ const WARNA_UNIT: Record<string, string> = {
 
 export default async function HartanahDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { db } = await requireLandlord();
+  const { user, db } = await requireLandlord();
+  const bolehTambah = user.role !== "STAFF";
+  const skop = await skopHartanahStaf(db, user);
 
   const harta = await db.property.findUnique({
     where: { id },
     include: {
-      units: { orderBy: { unit_no: "asc" } },
+      units: {
+        orderBy: { unit_no: "asc" },
+        include: {
+          tenancies: {
+            where: { status: "ACTIVE" },
+            take: 1,
+            include: { tenant: { select: { id: true, name: true } } },
+          },
+        },
+      },
     },
   });
 
-  if (!harta) notFound();
+  if (!harta || (skop && !skop.includes(harta.id))) notFound();
 
   return (
     <div className="space-y-6">
@@ -47,6 +58,15 @@ export default async function HartanahDetailPage({ params }: { params: Promise<{
         <ArrowLeft className="size-4" />
         Semua Hartanah
       </Link>
+
+      {harta.image_path && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/api/v1/hartanah/gambar/${harta.id}`}
+          alt={harta.name}
+          className="max-h-72 w-full rounded-lg border object-cover"
+        />
+      )}
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -61,12 +81,14 @@ export default async function HartanahDetailPage({ params }: { params: Promise<{
           <p className="mt-0.5 text-sm text-muted-foreground">{LABEL_JENIS_HARTANAH[harta.type]}</p>
           {harta.description && <p className="mt-2 max-w-xl text-sm">{harta.description}</p>}
         </div>
-        <Button asChild>
-          <Link href={`/dashboard/unit/baru?hartanah=${harta.id}`}>
-            <Plus className="mr-2 size-4" />
-            Tambah Unit
-          </Link>
-        </Button>
+        {bolehTambah && (
+          <Button asChild>
+            <Link href={`/dashboard/unit/baru?hartanah=${harta.id}`}>
+              <Plus className="mr-2 size-4" />
+              Tambah Unit
+            </Link>
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -83,24 +105,47 @@ export default async function HartanahDetailPage({ params }: { params: Promise<{
               <TableHeader>
                 <TableRow>
                   <TableHead>No. Unit</TableHead>
+                  <TableHead>Penyewa</TableHead>
                   <TableHead className="text-right">Sewa</TableHead>
                   <TableHead className="text-right">Deposit</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {harta.units.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell className="font-medium">{u.unit_no}</TableCell>
-                    <TableCell className="text-right">{formatRM(u.rent_amount)}</TableCell>
-                    <TableCell className="text-right">{formatRM(u.deposit_amount)}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={WARNA_UNIT[u.status]}>
-                        {LABEL_UNIT[u.status]}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {harta.units.map((u) => {
+                  const penyewa = u.tenancies[0]?.tenant ?? null;
+                  return (
+                    <TableRow key={u.id}>
+                      <TableCell className="font-medium">
+                        <Link
+                          href={`/dashboard/unit/${u.id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {u.unit_no}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        {penyewa ? (
+                          <Link
+                            href={`/dashboard/penyewa/${penyewa.id}`}
+                            className="text-primary hover:underline"
+                          >
+                            {penyewa.name}
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">{formatRM(u.rent_amount)}</TableCell>
+                      <TableCell className="text-right">{formatRM(u.deposit_amount)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={WARNA_UNIT[u.status]}>
+                          {LABEL_UNIT[u.status]}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

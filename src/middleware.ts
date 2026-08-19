@@ -28,23 +28,9 @@ export default auth((req) => {
     return NextResponse.redirect(new URL(rumah, nextUrl));
   }
 
-  // Lindungi setiap kawasan mengikut role
-  const kawasanRole = (path: string): string | null => {
-    if (path.startsWith("/dashboard")) return "LANDLORD_OR_STAFF";
-    if (path.startsWith("/admin")) return "SUPER_ADMIN";
-    if (path.startsWith("/penyewa")) return "TENANT";
-    return null;
-  };
-
-  const perlu = kawasanRole(nextUrl.pathname);
-  if (perlu) {
-    const layak =
-      (perlu === "LANDLORD_OR_STAFF" && (user.role === "LANDLORD" || user.role === "STAFF")) ||
-      (perlu === "SUPER_ADMIN" && user.role === "SUPER_ADMIN") ||
-      (perlu === "TENANT" && user.role === "TENANT");
-    if (!layak) return NextResponse.redirect(new URL(rumah, nextUrl));
-  }
-
+  // Kawasan diasingkan di peringkat halaman (requireLandlord / requirePenyewa /
+  // requireSuperAdmin) — kerana paparan peranan (view_role) disemak dari DB
+  // dan middleware hanya nampak role dalam JWT.
   return NextResponse.next();
 });
 

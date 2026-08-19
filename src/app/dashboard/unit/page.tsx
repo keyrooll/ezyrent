@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { requireLandlord } from "@/lib/sesi";
+import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { formatRM } from "@/lib/format";
 import { LABEL_UNIT } from "@/lib/labels";
 import { Button } from "@/components/ui/button";
@@ -25,9 +25,12 @@ const WARNA_UNIT: Record<string, string> = {
 };
 
 export default async function UnitPage() {
-  const { db } = await requireLandlord();
+  const { user, db } = await requireLandlord();
+  const bolehTambah = user.role !== "STAFF";
+  const skop = await skopHartanahStaf(db, user);
 
   const senarai = await db.unit.findMany({
+    where: skop ? { property_id: { in: skop } } : {},
     include: { property: { select: { name: true } } },
     orderBy: [{ property: { name: "asc" } }, { unit_no: "asc" }],
   });
@@ -39,12 +42,14 @@ export default async function UnitPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Unit</h1>
           <p className="text-sm text-muted-foreground">{senarai.length} unit keseluruhan</p>
         </div>
-        <Button asChild>
-          <Link href="/dashboard/unit/baru">
-            <Plus className="mr-2 size-4" />
-            Tambah Unit
-          </Link>
-        </Button>
+        {bolehTambah && (
+          <Button asChild>
+            <Link href="/dashboard/unit/baru">
+              <Plus className="mr-2 size-4" />
+              Tambah Unit
+            </Link>
+          </Button>
+        )}
       </div>
 
       {senarai.length === 0 ? (
@@ -66,7 +71,11 @@ export default async function UnitPage() {
             <TableBody>
               {senarai.map((u) => (
                 <TableRow key={u.id}>
-                  <TableCell className="font-medium">{u.unit_no}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/dashboard/unit/${u.id}`} className="text-primary hover:underline">
+                      {u.unit_no}
+                    </Link>
+                  </TableCell>
                   <TableCell>{u.property.name}</TableCell>
                   <TableCell className="text-right">{formatRM(u.rent_amount)}</TableCell>
                   <TableCell className="text-right">{formatRM(u.deposit_amount)}</TableCell>

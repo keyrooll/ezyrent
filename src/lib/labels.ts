@@ -9,6 +9,8 @@ import type {
   TenantStatus,
   UnitStatus,
   InvitationStatus,
+  ExpenseCategory,
+  MaintenanceStatus,
 } from "@prisma/client";
 
 /** Label Bahasa Melayu untuk semua enum — sumber tunggal untuk UI */
@@ -23,6 +25,8 @@ export type {
   TenantStatus,
   UnitStatus,
   InvitationStatus,
+  ExpenseCategory,
+  MaintenanceStatus,
 };
 
 export const LABEL_INVOIS: Record<InvoiceStatus, string> = {
@@ -98,4 +102,20 @@ export const LABEL_STATUS_LANDLORD: Record<LandlordStatus, string> = {
   TRIAL: "Percubaan",
   ACTIVE: "Aktif",
   SUSPENDED: "Digantung",
+};
+
+export const LABEL_EXPENSE: Record<ExpenseCategory, string> = {
+  MAINTENANCE: "Penyelenggaraan",
+  UTILITY: "Utiliti",
+  TAX: "Cukai",
+  INSURANCE: "Insurans",
+  MANAGEMENT: "Pengurusan",
+  RENOVATION: "Pengubahsuaian",
+  OTHER: "Lain-lain",
+};
+
+export const LABEL_MAINTENANCE: Record<MaintenanceStatus, string> = {
+  COMPLAIN: "Aduan Baru",
+  IN_PROGRESS: "Dalam Proses",
+  COMPLETED: "Selesai",
 };

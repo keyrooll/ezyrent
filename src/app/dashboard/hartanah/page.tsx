@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Plus, MapPin } from "lucide-react";
-import { requireLandlord } from "@/lib/sesi";
+import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { LABEL_JENIS_HARTANAH, LABEL_HARTANAH } from "@/lib/labels";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,9 +9,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 export const dynamic = "force-dynamic";
 
 export default async function HartanahPage() {
-  const { db } = await requireLandlord();
+  const { db, user } = await requireLandlord();
+  const skop = await skopHartanahStaf(db, user);
+  const bolehTambah = user.role !== "STAFF";
 
   const senarai = await db.property.findMany({
+    where: skop ? { id: { in: skop } } : {},
     include: { _count: { select: { units: true } } },
     orderBy: { created_at: "desc" },
   });
@@ -23,33 +26,47 @@ export default async function HartanahPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Hartanah</h1>
           <p className="text-sm text-muted-foreground">{senarai.length} hartanah didaftarkan</p>
         </div>
-        <Button asChild>
-          <Link href="/dashboard/hartanah/baru">
-            <Plus className="mr-2 size-4" />
-            Tambah Hartanah
-          </Link>
-        </Button>
+        {bolehTambah && (
+          <Button asChild>
+            <Link href="/dashboard/hartanah/baru">
+              <Plus className="mr-2 size-4" />
+              Tambah Hartanah
+            </Link>
+          </Button>
+        )}
       </div>
 
       {senarai.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <p className="text-sm text-muted-foreground">
-              Belum ada hartanah. Tambah hartanah pertama anda untuk bermula.
+              {bolehTambah
+                ? "Belum ada hartanah. Tambah hartanah pertama anda untuk bermula."
+                : "Belum ada hartanah. Tuan rumah belum menambah hartanah lagi."}
             </p>
-            <Button asChild>
-              <Link href="/dashboard/hartanah/baru">
-                <Plus className="mr-2 size-4" />
-                Tambah Hartanah
-              </Link>
-            </Button>
+            {bolehTambah && (
+              <Button asChild>
+                <Link href="/dashboard/hartanah/baru">
+                  <Plus className="mr-2 size-4" />
+                  Tambah Hartanah
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {senarai.map((h) => (
             <Link key={h.id} href={`/dashboard/hartanah/${h.id}`}>
-              <Card className="h-full transition-shadow hover:shadow-md">
+              <Card className="h-full overflow-hidden transition-shadow hover:shadow-md">
+                {h.image_path && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`/api/v1/hartanah/gambar/${h.id}`}
+                    alt={h.name}
+                    className="h-36 w-full object-cover"
+                  />
+                )}
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-base">{h.name}</CardTitle>

@@ -4,7 +4,7 @@ import fs from "fs/promises";
 import path from "path";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireLandlord } from "@/lib/sesi";
+import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { prisma } from "@/lib/prisma";
 import { PaymentMethod } from "@prisma/client";
 
@@ -104,10 +104,25 @@ export async function sahkanPembayaran(paymentId: string) {
 
   const pembayaran = await db.payment.findUnique({
     where: { id: paymentId },
-    include: { invoice: { select: { id: true, invoice_no: true, amount: true, paid_amount: true } }, tenant: true },
+    include: {
+      invoice: {
+        select: {
+          id: true,
+          invoice_no: true,
+          amount: true,
+          paid_amount: true,
+          unit: { select: { property_id: true } },
+        },
+      },
+      tenant: true,
+    },
   });
   if (!pembayaran) return;
   if (pembayaran.status !== "PENDING") return;
+
+  // Staf terhad hanya boleh sahkan pembayaran dalam skop hartanah mereka
+  const skop = await skopHartanahStaf(db, user);
+  if (skop && !skop.includes(pembayaran.invoice.unit.property_id)) return;
 
   const invois = pembayaran.invoice;
   const dibayar = Number(invois.paid_amount) + Number(pembayaran.amount);
@@ -161,9 +176,16 @@ export async function tolakPembayaran(paymentId: string, formData: FormData) {
 
   const pembayaran = await db.payment.findUnique({
     where: { id: paymentId },
-    include: { invoice: { select: { invoice_no: true } }, tenant: true },
+    include: {
+      invoice: { select: { invoice_no: true, unit: { select: { property_id: true } } } },
+      tenant: true,
+    },
   });
   if (!pembayaran || pembayaran.status !== "PENDING") return;
+
+  // Staf terhad hanya boleh tolak pembayaran dalam skop hartanah mereka
+  const skop = await skopHartanahStaf(db, user);
+  if (skop && !skop.includes(pembayaran.invoice.unit.property_id)) return;
 
   await prisma.$transaction(async (tx) => {
     await tx.payment.update({

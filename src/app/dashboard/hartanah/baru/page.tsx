@@ -104,6 +104,20 @@ export default function HartanahBaruPage() {
               <Textarea id="keterangan" name="keterangan" rows={3} placeholder="Nota tambahan..." />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="gambar">Gambar Hartanah (pilihan)</Label>
+              <Input
+                id="gambar"
+                name="gambar"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="h-8 w-auto max-w-64 text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                JPG, PNG atau WEBP — maksimum 5MB. Gambar ini akan dipaparkan di dashboard staf dan portal penyewa.
+              </p>
+            </div>
+
             <Button type="submit" disabled={menunggu}>
               {menunggu ? "Menyimpan..." : "Simpan Hartanah"}
             </Button>

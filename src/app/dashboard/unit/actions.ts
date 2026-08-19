@@ -20,7 +20,13 @@ const skema = z.object({
 export type HasilUnit = { ralat?: string; medan?: Record<string, string>; berjaya?: boolean };
 
 export async function ciptaUnit(_sebelum: HasilUnit, formData: FormData): Promise<HasilUnit> {
-  const { landlordId, db } = await requireLandlord();
+  const { user, landlordId, db } = await requireLandlord();
+
+  // Hanya tuan rumah boleh tambah unit — staf tidak dibenarkan
+  if (user.role === "STAFF") {
+    return { ralat: "Staf tidak dibenarkan menambah unit. Hanya tuan rumah sahaja." };
+  }
+
   const mentah = Object.fromEntries(formData.entries());
   const hasil = skema.safeParse(mentah);
 

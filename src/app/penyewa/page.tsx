@@ -1,9 +1,12 @@
 import Link from "next/link";
-import { ArrowRight, CalendarClock } from "lucide-react";
+import { ArrowRight, CalendarClock, Send } from "lucide-react";
 import { requirePenyewa } from "@/lib/sesi";
 import { formatRM, formatTarikh } from "@/lib/format";
-import { LABEL_INVOIS, LABEL_TENANCY } from "@/lib/labels";
+import { LABEL_INVOIS } from "@/lib/labels";
+import { CartaKutipan, type TitikKutipan } from "@/components/dashboard/carta-kutipan";
+import { CartaDonut, HIJAU, OREN } from "@/components/dashboard/carta-donut";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
@@ -19,29 +22,103 @@ const WARNA_INVOIS: Record<string, string> = {
 
 export default async function PenyewaDashboardPage() {
   const { db, tenantId, user } = await requirePenyewa();
+  const sekarang = new Date();
 
-  const tenancyAktif = await db.tenancy.findFirst({
-    where: { tenant_id: tenantId, status: "ACTIVE" },
-    include: { unit: { include: { property: { select: { name: true } } } } },
+  const [tenancyAktif, invois, bayaran6Bulan, statInvois, statUtiliti] = await Promise.all([
+    db.tenancy.findFirst({
+      where: { tenant_id: tenantId, status: "ACTIVE" },
+      include: {
+        unit: { include: { property: { select: { id: true, name: true, image_path: true } } } },
+      },
+    }),
+    db.rentInvoice.findMany({
+      where: { tenant_id: tenantId },
+      orderBy: { period_start: "desc" },
+      take: 5,
+    }),
+    db.payment.findMany({
+      where: {
+        tenant_id: tenantId,
+        status: "VERIFIED",
+        verified_at: {
+          gte: new Date(sekarang.getFullYear(), sekarang.getMonth() - 5, 1),
+        },
+      },
+      select: { amount: true, verified_at: true },
+    }),
+    db.rentInvoice.aggregate({
+      where: { tenant_id: tenantId },
+      _sum: { amount: true, paid_amount: true },
+    }),
+    // Bil utiliti belum selesai (belum bayar atau menunggu pengesahan)
+    db.utilityBil.aggregate({
+      where: { tenant_id: tenantId, status: { in: ["UNPAID", "PENDING_PROOF"] } },
+      _sum: { amount: true },
+      _count: true,
+    }),
+  ]);
+
+  const belumBayar = invois.filter(
+    (i) => i.status === "PENDING" || i.status === "OVERDUE" || i.status === "PARTIAL"
+  );
+  const jumlahTertunggak = belumBayar.reduce(
+    (t, i) => t + Number(i.amount) - Number(i.paid_amount),
+    0
+  );
+
+  // Invois belum selesai paling lama — sasaran butang "Hantar Bayaran"
+  const invoisSasaran =
+    invois.find((i) => i.status === "PENDING" || i.status === "OVERDUE" || i.status === "PARTIAL") ??
+    invois[0];
+
+  // Kumpulkan bayaran VERIFIED ikut bulan (6 bulan terakhir)
+  const labelBulan = new Intl.DateTimeFormat("ms-MY", { month: "short" });
+  const petaBulan = new Map<string, number>();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(sekarang.getFullYear(), sekarang.getMonth() - i, 1);
+    petaBulan.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, 0);
+  }
+  for (const p of bayaran6Bulan) {
+    if (!p.verified_at) continue;
+    const kunci = `${p.verified_at.getFullYear()}-${String(p.verified_at.getMonth() + 1).padStart(2, "0")}`;
+    if (petaBulan.has(kunci)) petaBulan.set(kunci, (petaBulan.get(kunci) ?? 0) + Number(p.amount));
+  }
+  const dataCarta: TitikKutipan[] = [...petaBulan.entries()].map(([kunci, jumlah]) => {
+    const [tahun, bulan] = kunci.split("-").map(Number);
+    return { bulan: labelBulan.format(new Date(tahun, bulan - 1, 1)), jumlah };
   });
 
-  const invois = await db.rentInvoice.findMany({
-    where: { tenant_id: tenantId },
-    orderBy: { period_start: "desc" },
-    take: 5,
-  });
-
-  const belumBayar = invois.filter((i) => i.status === "PENDING" || i.status === "OVERDUE" || i.status === "PARTIAL");
-  const jumlahTertunggak = belumBayar.reduce((t, i) => t + Number(i.amount) - Number(i.paid_amount), 0);
+  const jumlahSemua = Number(statInvois._sum.amount ?? 0);
+  const jumlahDahBayar = Number(statInvois._sum.paid_amount ?? 0);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Salam, {user.name?.split(" ")[0]}</h1>
-        <p className="text-sm text-muted-foreground">Berikut status sewaan dan invois anda.</p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Salam, {user.name?.split(" ")[0]}</h1>
+          <p className="text-sm text-muted-foreground">Berikut status sewaan dan invois anda.</p>
+        </div>
+        {invoisSasaran && (
+          <Button asChild>
+            <Link href={`/penyewa/invois/${invoisSasaran.id}`}>
+              <Send className="mr-2 size-4" />
+              Hantar Bayaran
+            </Link>
+          </Button>
+        )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      {/* Gambar hartanah sewaan */}
+      {tenancyAktif?.unit.property.image_path && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/api/v1/hartanah/gambar/${tenancyAktif.unit.property.id}`}
+          alt={tenancyAktif.unit.property.name}
+          className="max-h-64 w-full rounded-lg border object-cover"
+        />
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium text-muted-foreground">Sewaan Semasa</CardTitle>
@@ -87,6 +164,51 @@ export default async function PenyewaDashboardPage() {
             ) : (
               <p className="text-sm text-muted-foreground">—</p>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Bil Utiliti Belum Selesai
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xl font-semibold">{formatRM(Number(statUtiliti._sum.amount ?? 0))}</p>
+            <p className="text-sm text-muted-foreground">
+              {statUtiliti._count} bil — bayar &amp; hantar bukti di tab{" "}
+              <Link href="/penyewa/dokumen" className="text-primary hover:underline">
+                Dokumen
+              </Link>
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        {/* Carta bayaran */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Bayaran 6 Bulan</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CartaKutipan data={dataCarta} labelTooltip="Bayaran" />
+          </CardContent>
+        </Card>
+
+        {/* Donut dah bayar vs belum */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Dah Bayar vs Belum Bayar</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CartaDonut
+              labelTengah="RM"
+              data={[
+                { nama: "Dah Bayar", nilai: jumlahDahBayar, warna: HIJAU },
+                { nama: "Belum Bayar", nilai: Math.max(0, jumlahSemua - jumlahDahBayar), warna: OREN },
+              ]}
+            />
           </CardContent>
         </Card>
       </div>

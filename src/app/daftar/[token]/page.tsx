@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { TerimaJemputanForm } from "./terima-form";
+import { TerimaJemputanStafForm } from "./terima-staf-form";
 
 export const dynamic = "force-dynamic";
 
-export default async function DaftarPenyewaPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function DaftarPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
 
   const jemputan = await prisma.invitation.findUnique({
@@ -26,14 +27,17 @@ export default async function DaftarPenyewaPage({ params }: { params: Promise<{ 
           <div className="rounded-lg border bg-card p-6 text-center shadow-sm">
             <h2 className="text-lg font-semibold">Jemputan Tidak Sah</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Pautan ini tidak sah atau telah tamat tempoh. Sila minta tuan rumah menghantar jemputan baharu.
+              Pautan ini tidak sah atau telah tamat tempoh (24 jam). Sila minta tuan rumah menghantar
+              jemputan baharu.
             </p>
           </div>
+        ) : jemputan.role === "STAFF" ? (
+          <TerimaJemputanStafForm token={token} email={jemputan.tenant_email} />
         ) : (
           <TerimaJemputanForm
             token={token}
             email={jemputan.tenant_email}
-            unitLabel={`${jemputan.unit.property.name} — ${jemputan.unit.unit_no}`}
+            unitLabel={`${jemputan.unit!.property.name} — ${jemputan.unit!.unit_no}`}
           />
         )}
       </div>

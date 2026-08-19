@@ -98,6 +98,31 @@ enum PaymentMethod {
 
 enum DocCategory {
   PAYMENT_PROOF
+  TENANT_IC
+  TENANCY_AGREEMENT
+  UTILITY_BILL
+  STAFF_IC
+  STAFF_AGREEMENT
+  PROPERTY_PHOTO
+  MAINTENANCE_PHOTO
+  AVATAR
+  EXPENSE_RECEIPT
+  OTHER
+}
+
+enum MaintenanceStatus {
+  COMPLAIN
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ExpenseCategory {
+  MAINTENANCE
+  UTILITY
+  TAX
+  INSURANCE
+  MANAGEMENT
+  RENOVATION
   OTHER
 }
 
@@ -116,7 +141,9 @@ model User {
   password_hash    String
   name             String
   phone            String?
+  avatar_url       String?
   role             UserRole   @default(TENANT)
+  view_role        String?    // pilihan paparan peranan pengguna (LANDLORD | STAFF | TENANT)
   status           UserStatus @default(ACTIVE)
   created_at       DateTime   @default(now()) @db.Timestamptz(6)
   updated_at       DateTime   @updatedAt @db.Timestamptz(6)
@@ -128,6 +155,8 @@ model User {
   audit_logs       AuditLog[]
   created_documents Document[]  @relation("DocumentUploader")
   verified_payments Payment[]  @relation("PaymentVerifier")
+  reported_maintenance MaintenanceRequest[] @relation("MaintenanceReporter")
+  created_expenses Expense[]  @relation("ExpenseCreator")
 }
 
 model Landlord {
@@ -160,6 +189,9 @@ model Landlord {
   documents        Document[]
   audit_logs       AuditLog[]
   subscriptions    Subscription[]
+  maintenance_requests MaintenanceRequest[]
+  utility_bils          UtilityBil[]
+  expenses              Expense[]
 
   @@index([status])
 }
@@ -170,12 +202,18 @@ model Staff {
   landlord_id String
   permissions Json       @default("{}")
   status      UserStatus @default(ACTIVE)
+  manage_all  Boolean    @default(true) // true = urus semua hartanah; false = ikut property_grants
+  emergency_contact      String?
+  emergency_phone        String?
+  emergency_address      String?
+  emergency_relationship String?
   created_at  DateTime   @default(now()) @db.Timestamptz(6)
   updated_at  DateTime   @updatedAt @db.Timestamptz(6)
 
-  user           User            @relation(fields: [user_id], references: [id])
-  landlord       Landlord        @relation(fields: [landlord_id], references: [id])
+  user            User            @relation(fields: [user_id], references: [id])
+  landlord        Landlord        @relation(fields: [landlord_id], references: [id])
   property_grants PropertyStaff[]
+  documents       Document[]
 
   @@index([landlord_id, status])
 }
@@ -209,6 +247,7 @@ model Property {
   state       String
   postcode    String
   description String?
+  image_path  String?
   status      PropertyStatus @default(ACTIVE)
   created_at  DateTime       @default(now()) @db.Timestamptz(6)
   updated_at  DateTime       @updatedAt @db.Timestamptz(6)
@@ -216,6 +255,7 @@ model Property {
   landlord       Landlord        @relation(fields: [landlord_id], references: [id])
   units          Unit[]
   staff_grants   PropertyStaff[]
+  expenses       Expense[]
 
   @@index([landlord_id, status])
 }
@@ -241,6 +281,8 @@ model Unit {
   tenancies   Tenancy[]
   invitations Invitation[]
   invoices    RentInvoice[]
+  maintenance_requests MaintenanceRequest[]
+  expenses    Expense[]
 
   @@index([landlord_id, property_id])
   @@index([landlord_id, status])
@@ -255,8 +297,10 @@ model Tenant {
   phone             String?
   ic_no             String?
   occupation        String?
-  emergency_contact String?
-  emergency_phone   String?
+  emergency_contact      String?
+  emergency_phone        String?
+  emergency_address      String?
+  emergency_relationship String?
   status            TenantStatus @default(ACTIVE)
   created_at        DateTime     @default(now()) @db.Timestamptz(6)
   updated_at        DateTime     @updatedAt @db.Timestamptz(6)
@@ -268,6 +312,8 @@ model Tenant {
   payments    Payment[]
   invoices    RentInvoice[]
   documents   Document[]
+  maintenance_requests MaintenanceRequest[]
+  utility_bils UtilityBil[]
 
   @@index([landlord_id, status])
 }
@@ -275,7 +321,8 @@ model Tenant {
 model Invitation {
   id                 String           @id @default(cuid())
   landlord_id        String
-  unit_id            String
+  unit_id            String?
+  role               String           @default("TENANT") // TENANT | STAFF
   tenant_email       String
   tenant_phone       String?
   token              String           @unique
@@ -287,7 +334,7 @@ model Invitation {
   accepted_at        DateTime?        @db.Timestamptz(6)
 
   landlord Landlord @relation(fields: [landlord_id], references: [id])
-  unit     Unit     @relation(fields: [unit_id], references: [id])
+  unit     Unit?    @relation(fields: [unit_id], references: [id])
   tenant   Tenant?  @relation(fields: [tenant_id], references: [id])
 
   @@index([landlord_id, status])
@@ -369,28 +416,113 @@ model Payment {
   @@index([invoice_id, status])
 }
 
+// ---------- Bil Utiliti ----------
+
+model UtilityBil {
+  id                  String   @id @default(cuid())
+  landlord_id         String
+  tenant_id           String
+  unit_id             String?
+  bulan               String   // format YYYY-MM
+  amount              Decimal  @db.Decimal(18, 2)
+  status              String   @default("UNPAID") // UNPAID | PENDING_PROOF | PAID
+  created_by_user_id  String
+  verified_by_user_id String?
+  verified_at         DateTime? @db.Timestamptz(6)
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  landlord  Landlord   @relation(fields: [landlord_id], references: [id])
+  tenant    Tenant     @relation(fields: [tenant_id], references: [id])
+  documents Document[]
+
+  @@index([landlord_id, status])
+  @@index([landlord_id, tenant_id, bulan])
+}
+
+// ---------- Perbelanjaan ----------
+
+model Expense {
+  id                     String          @id @default(cuid())
+  landlord_id            String
+  property_id            String
+  unit_id                String?
+  maintenance_request_id String?
+  category               ExpenseCategory
+  description            String
+  amount                 Decimal         @db.Decimal(18, 2)
+  expense_date           DateTime        @db.Date
+  vendor                 String?
+  created_by_user_id     String
+  created_at             DateTime        @default(now()) @db.Timestamptz(6)
+
+  landlord             Landlord           @relation(fields: [landlord_id], references: [id])
+  property             Property           @relation(fields: [property_id], references: [id])
+  unit                 Unit?              @relation(fields: [unit_id], references: [id])
+  maintenance_request  MaintenanceRequest? @relation(fields: [maintenance_request_id], references: [id])
+  creator              User               @relation("ExpenseCreator", fields: [created_by_user_id], references: [id])
+  documents            Document[]
+
+  @@index([landlord_id, property_id])
+  @@index([landlord_id, expense_date])
+  @@index([landlord_id, category])
+}
+
 // ---------- Documents & Notifications ----------
 
 model Document {
-  id                String      @id @default(cuid())
-  landlord_id       String
-  uploader_user_id  String
-  tenant_id         String?
-  payment_id        String?
-  category          DocCategory @default(PAYMENT_PROOF)
-  original_name     String
-  stored_path       String
-  mime_type         String
-  size_bytes        Int
-  created_at        DateTime    @default(now()) @db.Timestamptz(6)
+  id                     String      @id @default(cuid())
+  landlord_id            String
+  uploader_user_id       String
+  tenant_id              String?
+  payment_id             String?
+  maintenance_request_id String?
+  staff_id               String?
+  utility_bil_id         String?
+  expense_id             String?
+  category               DocCategory @default(PAYMENT_PROOF)
+  original_name          String
+  stored_path            String
+  mime_type              String
+  size_bytes             Int
+  created_at             DateTime    @default(now()) @db.Timestamptz(6)
 
-  landlord Landlord @relation(fields: [landlord_id], references: [id])
-  uploader User     @relation("DocumentUploader", fields: [uploader_user_id], references: [id])
-  tenant   Tenant?  @relation(fields: [tenant_id], references: [id])
-  payment  Payment? @relation(fields: [payment_id], references: [id])
+  landlord             Landlord            @relation(fields: [landlord_id], references: [id])
+  uploader             User                @relation("DocumentUploader", fields: [uploader_user_id], references: [id])
+  tenant               Tenant?             @relation(fields: [tenant_id], references: [id])
+  payment              Payment?            @relation(fields: [payment_id], references: [id])
+  maintenance_request  MaintenanceRequest? @relation(fields: [maintenance_request_id], references: [id])
+  staff                Staff?              @relation(fields: [staff_id], references: [id])
+  utility_bil          UtilityBil?         @relation(fields: [utility_bil_id], references: [id])
+  expense              Expense?            @relation(fields: [expense_id], references: [id])
 
   @@index([landlord_id, payment_id])
   @@index([landlord_id, tenant_id])
+  @@index([landlord_id, maintenance_request_id])
+  @@index([landlord_id, staff_id])
+  @@index([landlord_id, utility_bil_id])
+  @@index([landlord_id, expense_id])
+}
+
+model MaintenanceRequest {
+  id                  String            @id @default(cuid())
+  landlord_id         String
+  unit_id             String
+  tenant_id           String?
+  reported_by_user_id String
+  title               String
+  description         String
+  status              MaintenanceStatus @default(COMPLAIN)
+  created_at          DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime          @updatedAt @db.Timestamptz(6)
+
+  landlord  Landlord   @relation(fields: [landlord_id], references: [id])
+  unit      Unit       @relation(fields: [unit_id], references: [id])
+  tenant    Tenant?    @relation(fields: [tenant_id], references: [id])
+  reporter  User       @relation("MaintenanceReporter", fields: [reported_by_user_id], references: [id])
+  documents Document[]
+  expenses  Expense[]
+
+  @@index([landlord_id, status])
 }
 
 model Notification {
@@ -437,6 +569,28 @@ model Subscription {
 }
 
 // ---------- Audit ----------
+
+// ---------- Kelulusan Profil ----------
+
+model ProfileUpdateRequest {
+  id          String    @id @default(cuid())
+  landlord_id String
+  jenis       String // TENANT | STAFF
+  user_id     String
+  tenant_id   String?
+  staff_id    String?
+  nama        String
+  telefon     String?
+  emergency_contact      String?
+  emergency_phone        String?
+  emergency_address      String?
+  emergency_relationship String?
+  status      String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  reviewed_at DateTime? @db.Timestamptz(6)
+
+  @@index([landlord_id, status])
+}
 
 model AuditLog {
   id            String   @id @default(cuid())

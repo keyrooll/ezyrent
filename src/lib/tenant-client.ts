@@ -28,6 +28,10 @@ const SCOPED_MODELS = new Set([
   "PropertyStaff",
   "Document",
   "Subscription",
+  "ProfileUpdateRequest",
+  "UtilityBil",
+  "MaintenanceRequest",
+  "Expense",
 ]);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

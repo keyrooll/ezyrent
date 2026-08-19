@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Check } from "lucide-react";
-import { requireLandlord } from "@/lib/sesi";
+import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { formatRM, formatTarikh } from "@/lib/format";
 import { LABEL_PEMBAYARAN, LABEL_KAEDAH, type PaymentStatus } from "@/lib/labels";
 import { sahkanPembayaran, tolakPembayaran } from "../invois/actions";
@@ -34,12 +34,16 @@ export default async function PembayaranPage({
 }: {
   searchParams?: Promise<{ status?: string }>;
 }) {
-  const { db } = await requireLandlord();
+  const { db, user } = await requireLandlord();
+  const skop = await skopHartanahStaf(db, user);
   const { status } = (await searchParams) ?? {};
   const sahStatus = (Object.keys(LABEL_PEMBAYARAN) as string[]).includes(status ?? "");
 
   const senarai = await db.payment.findMany({
-    where: sahStatus ? { status: status as PaymentStatus } : undefined,
+    where: {
+      ...(sahStatus ? { status: status as PaymentStatus } : {}),
+      ...(skop ? { invoice: { unit: { property_id: { in: skop } } } } : {}),
+    },
     include: {
       tenant: { select: { name: true } },
       invoice: { select: { id: true, invoice_no: true } },

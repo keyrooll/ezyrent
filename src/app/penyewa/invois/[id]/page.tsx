@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Printer } from "lucide-react";
 import { requirePenyewa } from "@/lib/sesi";
 import { formatRM, formatTarikh } from "@/lib/format";
 import { LABEL_INVOIS, LABEL_PEMBAYARAN, LABEL_KAEDAH } from "@/lib/labels";
 import { BayaranForm } from "./bayaran-form";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
@@ -33,6 +34,7 @@ export default async function PenyewaInvoisDetailPage({ params }: { params: Prom
   const invois = await db.rentInvoice.findUnique({
     where: { id },
     include: {
+      tenant: { select: { name: true } },
       unit: { include: { property: { select: { name: true } } } },
       payments: {
         include: { documents: { select: { id: true, original_name: true } } },
@@ -56,16 +58,24 @@ export default async function PenyewaInvoisDetailPage({ params }: { params: Prom
         Semua Invois
       </Link>
 
-      <div>
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">{invois.invoice_no}</h1>
-          <Badge variant="outline" className={WARNA_INVOIS[invois.status]}>
-            {LABEL_INVOIS[invois.status]}
-          </Badge>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{invois.invoice_no}</h1>
+            <Badge variant="outline" className={WARNA_INVOIS[invois.status]}>
+              {LABEL_INVOIS[invois.status]}
+            </Badge>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {invois.unit.property.name} • Unit {invois.unit.unit_no}
+          </p>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {invois.unit.property.name} • Unit {invois.unit.unit_no}
-        </p>
+        <Button asChild variant="outline">
+          <Link href={`/penyewa/invois/${invois.id}/resit`} target="_blank" rel="noreferrer">
+            <Printer className="mr-2 size-4" />
+            Cetak Resit
+          </Link>
+        </Button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -76,6 +86,18 @@ export default async function PenyewaInvoisDetailPage({ params }: { params: Prom
             </CardHeader>
             <CardContent>
               <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+                <div className="col-span-2 grid gap-3 sm:col-span-3 sm:grid-cols-2">
+                  <div className="rounded-lg bg-primary/5 px-4 py-3 ring-1 ring-primary/20">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Nama Penyewa</dt>
+                    <dd className="text-xl font-bold text-primary">{invois.tenant.name}</dd>
+                  </div>
+                  <div className="rounded-lg bg-primary/5 px-4 py-3 ring-1 ring-primary/20">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Hartanah</dt>
+                    <dd className="text-base font-bold text-primary">
+                      {invois.unit.property.name} ({invois.unit.unit_no})
+                    </dd>
+                  </div>
+                </div>
                 <div>
                   <dt className="text-muted-foreground">Tempoh</dt>
                   <dd className="font-medium">

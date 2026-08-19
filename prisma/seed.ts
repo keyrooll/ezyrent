@@ -7,6 +7,8 @@ import {
   PaymentMethod,
   TenancyStatus,
   DocCategory,
+  MaintenanceStatus,
+  ExpenseCategory,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import fs from "fs/promises";
@@ -24,6 +26,10 @@ const TINY_PNG = Buffer.from(
 
 function daysFromNow(days: number) {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+}
+
+function hoursFromNow(hours: number) {
+  return new Date(Date.now() + hours * 60 * 60 * 1000);
 }
 
 function date(y: number, m: number, d: number) {
@@ -324,11 +330,172 @@ async function main() {
       data: {
         landlord_id: landlord.id, unit_id: invUnit.id, tenant_email: "penyewa2@demo.my",
         tenant_phone: "018-3334444", token: "demo-jemputan-siti", status: "PENDING",
-        expires_at: daysFromNow(7), invited_by_user_id: staffUser.id,
+        expires_at: hoursFromNow(24), invited_by_user_id: staffUser.id,
       },
     });
   }
   console.log("✓ Jemputan demo untuk Siti (A-01-03)");
+
+  // ---------- Maintenance (1 setiap status) ----------
+  async function upsertMaintenance(unitNo: string, tenantId: string | null, reportedBy: string, data: {
+    title: string; description: string; status: MaintenanceStatus;
+  }) {
+    const unit = unitMap.get(unitNo)!;
+    const existing = await prisma.maintenanceRequest.findFirst({
+      where: { landlord_id: landlord.id, unit_id: unit.id, title: data.title },
+    });
+    if (existing) return existing;
+    return prisma.maintenanceRequest.create({
+      data: {
+        landlord_id: landlord.id, unit_id: unit.id, tenant_id: tenantId,
+        reported_by_user_id: reportedBy, title: data.title, description: data.description,
+        status: data.status,
+      },
+    });
+  }
+
+  const mAhmad = await upsertMaintenance("A-01-01", ahmad.id, tenantUser1.id, {
+    title: "Paip sinki bocor",
+    description: "Air menitik dari bawah sinki dapur sejak semalam.",
+    status: MaintenanceStatus.COMPLAIN,
+  });
+  const mFatimah = await upsertMaintenance("A-01-02", fatimah.id, staffUser.id, {
+    title: "Kipas siling rosak",
+    description: "Kipas bilik utama tidak berpusing, mungkin motor rosak.",
+    status: MaintenanceStatus.IN_PROGRESS,
+  });
+  await upsertMaintenance("HOUSE-01", kamal.id, owner.id, {
+    title: "Siling bocor selepas hujan",
+    description: "Tanda air di siling ruang tamu — dibaiki dan dicat semula.",
+    status: MaintenanceStatus.COMPLETED,
+  });
+
+  // Lampiran gambar pada aduan Ahmad
+  const dirMaintenance = path.join(process.cwd(), "uploads", landlord.id, "maintenance", mAhmad.id);
+  await fs.mkdir(dirMaintenance, { recursive: true });
+  await fs.writeFile(path.join(dirMaintenance, "gambar-aduan.png"), TINY_PNG);
+  await prisma.document.create({
+    data: {
+      landlord_id: landlord.id, uploader_user_id: tenantUser1.id, tenant_id: ahmad.id,
+      maintenance_request_id: mAhmad.id, category: DocCategory.MAINTENANCE_PHOTO,
+      original_name: "gambar-aduan.png",
+      stored_path: `uploads/${landlord.id}/maintenance/${mAhmad.id}/gambar-aduan.png`,
+      mime_type: "image/png", size_bytes: TINY_PNG.length,
+    },
+  });
+  console.log("✓ 3 aduan maintenance (complain / in progress / completed)");
+
+  // ---------- Bil utiliti (1 setiap status) ----------
+  async function upsertUtilityBil(unitNo: string, tenantId: string, data: {
+    bulan: string; amount: number; status: string; verifiedAt?: Date;
+  }) {
+    const unit = unitMap.get(unitNo)!;
+    const existing = await prisma.utilityBil.findFirst({
+      where: { landlord_id: landlord.id, tenant_id: tenantId, bulan: data.bulan },
+    });
+    if (existing) return existing;
+    return prisma.utilityBil.create({
+      data: {
+        landlord_id: landlord.id, tenant_id: tenantId, unit_id: unit.id,
+        bulan: data.bulan, amount: data.amount, status: data.status,
+        created_by_user_id: staffUser.id,
+        verified_by_user_id: data.verifiedAt ? staffUser.id : null,
+        verified_at: data.verifiedAt ?? null,
+      },
+    });
+  }
+
+  const bilAhmad = await upsertUtilityBil("A-01-01", ahmad.id, {
+    bulan: "2026-07", amount: 120.5, status: "PENDING_PROOF",
+  });
+  const bilFatimah = await upsertUtilityBil("A-01-02", fatimah.id, {
+    bulan: "2026-08", amount: 85, status: "UNPAID",
+  });
+  await upsertUtilityBil("HOUSE-01", kamal.id, {
+    bulan: "2026-06", amount: 95, status: "PAID", verifiedAt: date(2026, 7, 2),
+  });
+
+  // Bukti pembayaran bil Ahmad (PENDING_PROOF)
+  const bilAhmadExists = await prisma.document.findFirst({
+    where: { landlord_id: landlord.id, utility_bil_id: bilAhmad.id },
+  });
+  if (!bilAhmadExists) {
+    await prisma.document.create({
+      data: {
+        landlord_id: landlord.id, uploader_user_id: tenantUser1.id, tenant_id: ahmad.id,
+        utility_bil_id: bilAhmad.id, category: DocCategory.UTILITY_BILL,
+        original_name: "bukti-bil.png", stored_path: `uploads/${landlord.id}/utiliti/${bilAhmad.id}/bukti-bil.png`,
+        mime_type: "image/png", size_bytes: TINY_PNG.length,
+      },
+    });
+  }
+  console.log("✓ 3 bil utiliti (unpaid / pending proof / paid)");
+
+  // ---------- Perbelanjaan ----------
+  async function upsertExpense(data: {
+    propertyId: string; unitId: string | null; maintenanceId: string | null;
+    category: ExpenseCategory; description: string; amount: number;
+    expenseDate: Date; vendor: string | null; byUserId: string;
+  }) {
+    const existing = await prisma.expense.findFirst({
+      where: { landlord_id: landlord.id, description: data.description, amount: data.amount },
+    });
+    if (existing) return existing;
+    return prisma.expense.create({
+      data: {
+        landlord_id: landlord.id, property_id: data.propertyId, unit_id: data.unitId,
+        maintenance_request_id: data.maintenanceId, category: data.category,
+        description: data.description, amount: data.amount, expense_date: data.expenseDate,
+        vendor: data.vendor, created_by_user_id: data.byUserId,
+      },
+    });
+  }
+
+  const expBaikiPaip = await upsertExpense({
+    propertyId: condo.id, unitId: unitMap.get("A-01-01")!.id, maintenanceId: mAhmad.id,
+    category: ExpenseCategory.MAINTENANCE, description: "Baiki paip sinki dapur bocor",
+    amount: 180, expenseDate: date(2026, 8, 10), vendor: "Ali Plumbing", byUserId: staffUser.id,
+  });
+  await upsertExpense({
+    propertyId: condo.id, unitId: unitMap.get("A-01-02")!.id, maintenanceId: null,
+    category: ExpenseCategory.UTILITY, description: "Bil elektrik Julai",
+    amount: 95, expenseDate: date(2026, 7, 15), vendor: "TNB", byUserId: staffUser.id,
+  });
+  await upsertExpense({
+    propertyId: teres.id, unitId: unitMap.get("HOUSE-01")!.id, maintenanceId: null,
+    category: ExpenseCategory.INSURANCE, description: "Insurans kebakaran tahunan",
+    amount: 450, expenseDate: date(2026, 6, 5), vendor: "Allianz", byUserId: owner.id,
+  });
+  await upsertExpense({
+    propertyId: teres.id, unitId: null, maintenanceId: null,
+    category: ExpenseCategory.TAX, description: "Cukai pintu separuh tahun",
+    amount: 1200, expenseDate: date(2026, 6, 20), vendor: "MPKJ", byUserId: owner.id,
+  });
+  await upsertExpense({
+    propertyId: condo.id, unitId: null, maintenanceId: null,
+    category: ExpenseCategory.MANAGEMENT, description: "Yuran pengurusan bulanan",
+    amount: 300, expenseDate: date(2026, 8, 1), vendor: "Agensi Pengurusan", byUserId: staffUser.id,
+  });
+
+  // Resit untuk perbelanjaan baiki paip
+  const resitExpense = await prisma.document.findFirst({
+    where: { landlord_id: landlord.id, expense_id: expBaikiPaip.id },
+  });
+  if (!resitExpense) {
+    const dirExpense = path.join(process.cwd(), "uploads", landlord.id, "expense", expBaikiPaip.id);
+    await fs.mkdir(dirExpense, { recursive: true });
+    await fs.writeFile(path.join(dirExpense, "resit-baiki.png"), TINY_PNG);
+    await prisma.document.create({
+      data: {
+        landlord_id: landlord.id, uploader_user_id: staffUser.id,
+        expense_id: expBaikiPaip.id, category: DocCategory.EXPENSE_RECEIPT,
+        original_name: "resit-baiki.png",
+        stored_path: `uploads/${landlord.id}/expense/${expBaikiPaip.id}/resit-baiki.png`,
+        mime_type: "image/png", size_bytes: TINY_PNG.length,
+      },
+    });
+  }
+  console.log("✓ 5 perbelanjaan demo (pelbagai kategori, 1 dengan resit)");
 
   // ---------- Notifications & audit ----------
   await prisma.notification.createMany({

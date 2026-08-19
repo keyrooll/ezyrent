@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Check, X } from "lucide-react";
-import { requireLandlord } from "@/lib/sesi";
+import { ArrowLeft, Check, Printer, X } from "lucide-react";
+import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { formatRM, formatTarikh } from "@/lib/format";
 import { LABEL_INVOIS, LABEL_PEMBAYARAN, LABEL_KAEDAH } from "@/lib/labels";
 import { sahkanPembayaran, tolakPembayaran } from "../actions";
@@ -31,7 +31,8 @@ const WARNA_BAYARAN: Record<string, string> = {
 
 export default async function InvoisDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { db } = await requireLandlord();
+  const { db, user } = await requireLandlord();
+  const skop = await skopHartanahStaf(db, user);
 
   const invois = await db.rentInvoice.findUnique({
     where: { id },
@@ -48,7 +49,7 @@ export default async function InvoisDetailPage({ params }: { params: Promise<{ i
     },
   });
 
-  if (!invois) notFound();
+  if (!invois || (skop && !skop.includes(invois.unit.property_id))) notFound();
 
   const baki = Number(invois.amount) - Number(invois.paid_amount);
 
@@ -74,6 +75,12 @@ export default async function InvoisDetailPage({ params }: { params: Promise<{ i
             {invois.tenant.name} • {invois.unit.property.name} ({invois.unit.unit_no})
           </p>
         </div>
+        <Button asChild variant="outline">
+          <Link href={`/dashboard/invois/${invois.id}/resit`} target="_blank" rel="noreferrer">
+            <Printer className="mr-2 size-4" />
+            Cetak Resit
+          </Link>
+        </Button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -85,6 +92,18 @@ export default async function InvoisDetailPage({ params }: { params: Promise<{ i
             </CardHeader>
             <CardContent>
               <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+                <div className="col-span-2 grid gap-3 sm:col-span-3 sm:grid-cols-2">
+                  <div className="rounded-lg bg-primary/5 px-4 py-3 ring-1 ring-primary/20">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Nama Penyewa</dt>
+                    <dd className="text-xl font-bold text-primary">{invois.tenant.name}</dd>
+                  </div>
+                  <div className="rounded-lg bg-primary/5 px-4 py-3 ring-1 ring-primary/20">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Hartanah</dt>
+                    <dd className="text-base font-bold text-primary">
+                      {invois.unit.property.name} ({invois.unit.unit_no})
+                    </dd>
+                  </div>
+                </div>
                 <div>
                   <dt className="text-muted-foreground">Tempoh</dt>
                   <dd className="font-medium">

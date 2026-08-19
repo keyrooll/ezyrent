@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { formatRM, formatTarikh } from "@/lib/format";
 import { LABEL_STATUS_LANDLORD } from "@/lib/labels";
 import { tukarStatusLandlord } from "./actions";
+import { CartaDonut, HIJAU, OREN } from "@/components/dashboard/carta-donut";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,16 +20,23 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
   await requireSuperAdmin();
+  const sekarang = new Date();
 
-  const [jumlahLandlord, jumlahUnit, tenancyAktif, senarai] = await Promise.all([
-    prisma.landlord.count(),
-    prisma.unit.count(),
-    prisma.tenancy.count({ where: { status: "ACTIVE" } }),
-    prisma.landlord.findMany({
-      include: { owner: { select: { name: true, email: true } } },
-      orderBy: { created_at: "desc" },
-    }),
-  ]);
+  const [jumlahLandlord, jumlahUnit, unitDisewakan, unitDahBayar, unitKosong, tenancyAktif, senarai] =
+    await Promise.all([
+      prisma.landlord.count(),
+      prisma.unit.count(),
+      prisma.unit.count({ where: { status: "OCCUPIED" } }),
+      prisma.rentInvoice.count({
+        where: { status: "PAID", period_start: { lte: sekarang }, period_end: { gte: sekarang } },
+      }),
+      prisma.unit.count({ where: { status: "VACANT" } }),
+      prisma.tenancy.count({ where: { status: "ACTIVE" } }),
+      prisma.landlord.findMany({
+        include: { owner: { select: { name: true, email: true } } },
+        orderBy: { created_at: "desc" },
+      }),
+    ]);
 
   const jumlahSewa = tenancyAktif; // proksi MRR: jumlah tenancy aktif (rent snapshot di Tenancy)
   const mrr = await prisma.tenancy.aggregate({ where: { status: "ACTIVE" }, _sum: { rent_amount: true } });
@@ -36,7 +44,7 @@ export default async function AdminPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Papan Pemuka Admin</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Gambaran keseluruhan platform EzyRent.</p>
       </div>
 
@@ -74,6 +82,21 @@ export default async function AdminPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Unit Disewakan vs Dah Bayar (Platform)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CartaDonut
+            data={[
+              { nama: "Disewakan", nilai: unitDisewakan, warna: OREN },
+              { nama: "Dah Bayar", nilai: unitDahBayar, warna: HIJAU },
+              { nama: "Kosong", nilai: unitKosong, warna: "#A1A1AA" },
+            ]}
+          />
+        </CardContent>
+      </Card>
 
       <div className="overflow-x-auto rounded-lg border">
         <Table>
