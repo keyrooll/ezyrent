@@ -3,6 +3,7 @@ import { Banknote, FileText, ReceiptText } from "lucide-react";
 import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { formatRM, formatTarikhPendek } from "@/lib/format";
 import { LABEL_EXPENSE, type ExpenseCategory } from "@/lib/labels";
+import { CartaDonut, type DataDonut } from "@/components/dashboard/carta-donut";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -48,7 +49,7 @@ export default async function PerbelanjaanPage({
       })()
     : undefined;
 
-  const [expenses, properties, units, aduan] = await Promise.all([
+  const [expenses, properties, units, aduan, groupKategori] = await Promise.all([
     db.expense.findMany({
       where: {
         ...(skop ? { property_id: { in: skop } } : {}),
@@ -81,6 +82,15 @@ export default async function PerbelanjaanPage({
       include: { unit: { select: { unit_no: true, property: { select: { name: true } } } } },
       orderBy: { created_at: "desc" },
     }),
+    // Donut perbelanjaan ikut kategori — ikut skop + bulan (bukan filter kategori)
+    db.expense.groupBy({
+      by: ["category"],
+      where: {
+        ...(skop ? { property_id: { in: skop } } : {}),
+        ...(filterBulan ? { expense_date: filterBulan } : {}),
+      },
+      _sum: { amount: true },
+    }),
   ]);
 
   const pilihanHartanah = properties.map((p) => ({ id: p.id, label: p.name }));
@@ -88,6 +98,13 @@ export default async function PerbelanjaanPage({
   const pilihanAduan = aduan.map((a) => ({
     id: a.id,
     label: `${a.title} (${a.unit.property.name} ${a.unit.unit_no})`,
+  }));
+
+  const PALET = ["#4E9D2D", "#F5821F", "#E5484D", "#2D7FF9", "#8B5CF6", "#EC4899", "#64748B"];
+  const dataDonut: DataDonut[] = groupKategori.map((g, i) => ({
+    nama: LABEL_EXPENSE[g.category],
+    nilai: Math.round(Number(g._sum.amount ?? 0)),
+    warna: PALET[i % PALET.length],
   }));
 
   const jumlah = expenses.reduce((s, e) => s + Number(e.amount), 0);
@@ -163,7 +180,18 @@ export default async function PerbelanjaanPage({
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Donut perbelanjaan ikut kategori */}
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle className="text-base">Perbelanjaan Mengikut Kategori</CardTitle>
+            <CardDescription>Pecahan amaun bagi tempoh dipilih.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CartaDonut data={dataDonut} labelTengah="Jumlah (RM)" />
+          </CardContent>
+        </Card>
+
         {/* Tambah expense */}
         <Card className="h-fit">
           <CardHeader>
@@ -174,9 +202,11 @@ export default async function PerbelanjaanPage({
             <ExpenseForm hartanah={pilihanHartanah} unit={pilihanUnit} aduan={pilihanAduan} />
           </CardContent>
         </Card>
+      </div>
 
+      <div>
         {/* Senarai expense */}
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle className="text-base">Senarai Perbelanjaan ({expenses.length})</CardTitle>
             <CardDescription>Jumlah: {formatRM(jumlah)}</CardDescription>

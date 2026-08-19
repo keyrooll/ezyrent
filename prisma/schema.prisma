@@ -283,6 +283,7 @@ model Unit {
   invoices    RentInvoice[]
   maintenance_requests MaintenanceRequest[]
   expenses    Expense[]
+  utility_bils UtilityBil[]
 
   @@index([landlord_id, property_id])
   @@index([landlord_id, status])
@@ -433,10 +434,12 @@ model UtilityBil {
 
   landlord  Landlord   @relation(fields: [landlord_id], references: [id])
   tenant    Tenant     @relation(fields: [tenant_id], references: [id])
+  unit      Unit?      @relation(fields: [unit_id], references: [id])
   documents Document[]
 
   @@index([landlord_id, status])
   @@index([landlord_id, tenant_id, bulan])
+  @@index([landlord_id, unit_id])
 }
 
 // ---------- Perbelanjaan ----------

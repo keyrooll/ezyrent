@@ -26,10 +26,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="flex min-h-svh flex-col md:flex-row">
       {/* Sidebar desktop */}
       <aside className="hidden w-60 shrink-0 flex-col border-r bg-card px-3 py-4 md:flex">
-        <Link href="/dashboard" className="mb-6 flex flex-col items-start px-2">
+        <Link href="/dashboard" className="mb-6 flex flex-col items-center px-2">
           <Brand className="h-12" />
           <span className="mt-1 text-[10px] leading-none text-muted-foreground">
-            EzyRent v{VERSI}
+            version {VERSI}
           </span>
         </Link>
         <Sidebar role={user.role} />

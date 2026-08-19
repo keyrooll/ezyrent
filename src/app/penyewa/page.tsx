@@ -85,7 +85,7 @@ export default async function PenyewaDashboardPage() {
   }
   const dataCarta: TitikKutipan[] = [...petaBulan.entries()].map(([kunci, jumlah]) => {
     const [tahun, bulan] = kunci.split("-").map(Number);
-    return { bulan: labelBulan.format(new Date(tahun, bulan - 1, 1)), jumlah };
+    return { label: labelBulan.format(new Date(tahun, bulan - 1, 1)), jumlah };
   });
 
   const jumlahSemua = Number(statInvois._sum.amount ?? 0);

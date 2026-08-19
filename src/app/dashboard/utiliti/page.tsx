@@ -4,6 +4,8 @@ import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { formatRM } from "@/lib/format";
 import { CartaKutipan, type TitikKutipan } from "@/components/dashboard/carta-kutipan";
 import { CartaDonut, HIJAU, MERAH } from "@/components/dashboard/carta-donut";
+import { JulatChart } from "@/components/dashboard/julat-chart";
+import { selesaikanJulat, senaraiBulan, fmtTarikh } from "@/lib/julat";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,9 +30,15 @@ function formatBulan(bulan: string) {
   return `${BULAN_MELAYU[Number(bln) - 1] ?? bln} ${tahun}`;
 }
 
-export default async function UtilitiPage() {
+export default async function UtilitiPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ julat?: string; jmula?: string; jakhir?: string }>;
+}) {
   const { db, user } = await requireLandlord();
   const skop = await skopHartanahStaf(db, user);
+  const { julat, jmula, jakhir } = (await searchParams) ?? {};
+  const jlt = selesaikanJulat(julat, jmula, jakhir);
   // Bil utiliti mesti milik penyewa dalam skop hartanah staf
   const skopBil = skop
     ? { tenant: { tenancies: { some: { unit: { property_id: { in: skop } } } } } }
@@ -81,21 +89,12 @@ export default async function UtilitiPage() {
       : p.name,
   }));
 
-  // Kutipan utiliti ikut bulan (6 bulan terakhir)
-  const sekarang = new Date();
-  const labelBulan = new Intl.DateTimeFormat("ms-MY", { month: "short" });
-  const petaBulan = new Map<string, number>();
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(sekarang.getFullYear(), sekarang.getMonth() - i, 1);
-    petaBulan.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, 0);
-  }
-  for (const g of bayarMengikutBulan) {
-    if (petaBulan.has(g.bulan)) petaBulan.set(g.bulan, Number(g._sum.amount ?? 0));
-  }
-  const dataCarta: TitikKutipan[] = [...petaBulan.entries()].map(([kunci, jumlah]) => {
-    const [tahun, bulan] = kunci.split("-").map(Number);
-    return { bulan: labelBulan.format(new Date(tahun, bulan - 1, 1)), jumlah };
-  });
+  // Kutipan utiliti ikut bulan dalam julat terpilih
+  const petaBulan = new Map(bayarMengikutBulan.map((g) => [g.bulan, Number(g._sum.amount ?? 0)]));
+  const dataCarta: TitikKutipan[] = senaraiBulan(jlt).map(({ kunci, label }) => ({
+    label,
+    jumlah: petaBulan.get(kunci) ?? 0,
+  }));
 
   const kad = [
     { label: "Bil Dah Bayar", nilai: String(dahBayar._count), ikon: CheckCircle2 },
@@ -129,10 +128,15 @@ export default async function UtilitiPage() {
       </div>
 
       {/* Carta + donut */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-muted-foreground">Analitik</h2>
+        <JulatChart julat={julat ?? "6"} mula={fmtTarikh(jlt.mula)} akhir={fmtTarikh(jlt.akhir)} />
+      </div>
+
       <div className="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Bayaran Utiliti 6 Bulan</CardTitle>
+            <CardTitle className="text-base">Bayaran Utiliti</CardTitle>
           </CardHeader>
           <CardContent>
             <CartaKutipan data={dataCarta} labelTooltip="Bayaran Utiliti" />

@@ -2,19 +2,28 @@ import Link from "next/link";
 import { Building2, DoorOpen, Home, CircleDashed, Users, Wallet, Banknote, Clock, Zap } from "lucide-react";
 import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { formatRM, formatTarikhPendek } from "@/lib/format";
-import { CartaKutipan, type TitikKutipan } from "@/components/dashboard/carta-kutipan";
+import { CartaKutipan } from "@/components/dashboard/carta-kutipan";
+import { CartaPL, type TitikPL } from "@/components/dashboard/carta-pl";
 import { CartaDonut, HIJAU, OREN, MERAH } from "@/components/dashboard/carta-donut";
+import { JulatChart } from "@/components/dashboard/julat-chart";
+import { selesaikanJulat, bucketSiri, fmtTarikh } from "@/lib/julat";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ julat?: string; jmula?: string; jakhir?: string }>;
+}) {
   const { db, user } = await requireLandlord();
   const skop = await skopHartanahStaf(db, user);
   const skopHartanah = skop ? { unit: { property_id: { in: skop } } } : {};
   const sekarang = new Date();
+  const { julat, jmula, jakhir } = (await searchParams) ?? {};
+  const jlt = selesaikanJulat(julat, jmula, jakhir);
 
   const [
     bilHartanah,
@@ -29,6 +38,7 @@ export default async function DashboardPage() {
     kutipan6Bulan,
     statUtiliti,
     bilDahDue,
+    expense6Bulan,
   ] = await Promise.all([
       db.property.count({ where: skop ? { id: { in: skop } } : {} }),
       db.unit.count({ where: skop ? { property_id: { in: skop } } : {} }),
@@ -74,9 +84,7 @@ export default async function DashboardPage() {
       db.payment.findMany({
         where: {
           status: "VERIFIED",
-          verified_at: {
-            gte: new Date(new Date().getFullYear(), new Date().getMonth() - 5, 1),
-          },
+          verified_at: { gte: jlt.mula, lte: jlt.akhir },
           ...(skop ? { invoice: { unit: { property_id: { in: skop } } } } : {}),
         },
         select: { amount: true, verified_at: true },
@@ -95,26 +103,38 @@ export default async function DashboardPage() {
         by: ["unit_id"],
         where: { status: "OVERDUE", ...skopHartanah },
       }),
+      // Perbelanjaan dalam julat untuk carta untung-rugi
+      db.expense.findMany({
+        where: {
+          expense_date: { gte: jlt.mula, lte: jlt.akhir },
+          ...(skop ? { property_id: { in: skop } } : {}),
+        },
+        select: { amount: true, expense_date: true },
+      }),
     ]);
 
   const belumTerima = Number(statInvois._sum.amount ?? 0) - Number(statInvois._sum.paid_amount ?? 0);
 
-  // Kumpulkan kutipan VERIFIED ikut bulan (6 bulan terakhir)
-  const labelBulan = new Intl.DateTimeFormat("ms-MY", { month: "short" });
-  const petaBulan = new Map<string, number>();
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(sekarang.getFullYear(), sekarang.getMonth() - i, 1);
-    petaBulan.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, 0);
-  }
-  for (const p of kutipan6Bulan) {
-    if (!p.verified_at) continue;
-    const kunci = `${p.verified_at.getFullYear()}-${String(p.verified_at.getMonth() + 1).padStart(2, "0")}`;
-    if (petaBulan.has(kunci)) petaBulan.set(kunci, (petaBulan.get(kunci) ?? 0) + Number(p.amount));
-  }
-  const dataCarta: TitikKutipan[] = [...petaBulan.entries()].map(([kunci, jumlah]) => {
-    const [tahun, bulan] = kunci.split("-").map(Number);
-    return { bulan: labelBulan.format(new Date(tahun, bulan - 1, 1)), jumlah };
-  });
+  // Kutipan & liabiliti ikut julat terpilih (harian ≤45 hari, bulanan selain itu)
+  const siriPendapatan = bucketSiri(
+    jlt,
+    kutipan6Bulan
+      .filter((p) => p.verified_at)
+      .map((p) => ({ tarikh: p.verified_at!, jumlah: Number(p.amount) }))
+  );
+  const siriLiabiliti = bucketSiri(
+    jlt,
+    expense6Bulan.map((e) => ({ tarikh: e.expense_date, jumlah: Number(e.amount) }))
+  );
+  const dataCarta = siriPendapatan;
+  const petaLiabiliti = new Map(siriLiabiliti.map((s) => [s.label, s.jumlah]));
+  const dataPL: TitikPL[] = siriPendapatan.map((s) => ({
+    label: s.label,
+    pendapatan: s.jumlah,
+    liabiliti: petaLiabiliti.get(s.label) ?? 0,
+  }));
+  const jumlahPendapatan = siriPendapatan.reduce((s, v) => s + v.jumlah, 0);
+  const jumlahLiabiliti = siriLiabiliti.reduce((s, v) => s + v.jumlah, 0);
 
   const kad = [
     { label: "Hartanah", nilai: String(bilHartanah), ikon: Building2 },
@@ -138,26 +158,61 @@ export default async function DashboardPage() {
       </div>
 
       {/* Kad KPI */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
         {kad.map(({ label, nilai, ikon: Ikon }) => (
-          <Card key={label} className="px-3 py-2.5">
+          <Card key={label} className="px-3 py-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-xs font-medium text-muted-foreground">{label}</span>
-              <Ikon className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate text-[11px] leading-tight text-muted-foreground">{label}</span>
+              <Ikon className="size-4 shrink-0 text-muted-foreground" />
             </div>
-            <p className="mt-1 text-lg font-semibold tracking-tight">{nilai}</p>
+            <p className="mt-0.5 truncate text-xl font-semibold tracking-tight">{nilai}</p>
           </Card>
         ))}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-muted-foreground">Analitik</h2>
+        <JulatChart
+          julat={julat ?? "6"}
+          mula={fmtTarikh(jlt.mula)}
+          akhir={fmtTarikh(jlt.akhir)}
+        />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-4">
         {/* Carta kutipan */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Kutipan Sewa 6 Bulan</CardTitle>
+            <CardTitle className="text-base">Kutipan Sewa</CardTitle>
           </CardHeader>
           <CardContent>
             <CartaKutipan data={dataCarta} />
+          </CardContent>
+        </Card>
+
+        {/* Carta untung-rugi */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Profit &amp; Loss</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CartaPL data={dataPL} />
+          </CardContent>
+        </Card>
+
+        {/* Donut pendapatan vs liabiliti */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Pendapatan vs Liabiliti</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CartaDonut
+              data={[
+                { nama: "Pendapatan", nilai: jumlahPendapatan, warna: HIJAU },
+                { nama: "Liabiliti", nilai: jumlahLiabiliti, warna: MERAH },
+              ]}
+              labelTengah="Jumlah"
+            />
           </CardContent>
         </Card>
 

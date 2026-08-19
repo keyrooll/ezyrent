@@ -30,7 +30,7 @@ export async function tambahBilUtility(
   // Penyewa mesti dalam skop staf (kalau staf terhad)
   const penyewa = await db.tenant.findUnique({
     where: { id: parsed.data.tenantId },
-    include: { tenancies: { select: { unit: { select: { property_id: true } } } } },
+    include: { tenancies: { select: { unit: { select: { id: true, property_id: true } } } } },
   });
   if (!penyewa) return { ralat: "Penyewa tidak dijumpai." };
 
@@ -54,6 +54,7 @@ export async function tambahBilUtility(
     data: {
       landlord_id: landlordId, // dienforce oleh tenant-client
       tenant_id: penyewa.id,
+      unit_id: penyewa.tenancies[0]?.unit.id ?? null,
       bulan: parsed.data.bulan,
       amount: parsed.data.amaun,
       status: "UNPAID",

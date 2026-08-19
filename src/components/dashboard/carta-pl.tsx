@@ -8,22 +8,19 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  Legend,
 } from "recharts";
 import { formatRM } from "@/lib/format";
 
-export type TitikKutipan = { label: string; jumlah: number };
+export type TitikPL = { label: string; pendapatan: number; liabiliti: number };
 
-/** Carta kutipan sewa bulanan (klién — Recharts perlukan DOM) */
-export function CartaKutipan({
-  data,
-  labelTooltip = "Kutipan",
-}: {
-  data: TitikKutipan[];
-  labelTooltip?: string;
-}) {
+const HIJAU = "#4E9D2D";
+const MERAH = "#E5484D";
+
+/** Carta untung-rugi bulanan — pendapatan vs liabiliti */
+export function CartaPL({ data }: { data: TitikPL[] }) {
   return (
     <div className="h-64 w-full">
-      {/* initialDimension — papar carta serta-merta sebelum ukuran sebenar diambil (HP) */}
       <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 520, height: 256 }}>
         <BarChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
@@ -40,7 +37,7 @@ export function CartaKutipan({
             tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
           />
           <Tooltip
-            formatter={(v) => [formatRM(Number(v)), labelTooltip]}
+            formatter={(v, nama) => [formatRM(Number(v)), String(nama)]}
             cursor={{ fill: "var(--accent)" }}
             contentStyle={{
               borderRadius: 8,
@@ -50,7 +47,9 @@ export function CartaKutipan({
               fontSize: 12,
             }}
           />
-          <Bar dataKey="jumlah" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={48} />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Bar dataKey="pendapatan" name="Pendapatan" fill={HIJAU} radius={[4, 4, 0, 0]} maxBarSize={20} />
+          <Bar dataKey="liabiliti" name="Liabiliti" fill={MERAH} radius={[4, 4, 0, 0]} maxBarSize={20} />
         </BarChart>
       </ResponsiveContainer>
     </div>

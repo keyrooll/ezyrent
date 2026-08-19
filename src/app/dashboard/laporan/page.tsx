@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Download } from "lucide-react";
 import { requireLandlord, skopHartanahStaf } from "@/lib/sesi";
 import { formatRM } from "@/lib/format";
-import { LABEL_EXPENSE } from "@/lib/labels";
 import {
   dataLaporanRental,
   dataLaporanHartanah,
@@ -13,7 +12,8 @@ import {
   type Sel,
 } from "@/lib/laporan-data";
 import { CartaKutipan, type TitikKutipan } from "@/components/dashboard/carta-kutipan";
-import { CartaDonut, type DataDonut } from "@/components/dashboard/carta-donut";
+import { JulatChart } from "@/components/dashboard/julat-chart";
+import { selesaikanJulat, bucketSiri, fmtTarikh } from "@/lib/julat";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -45,11 +45,12 @@ function nilaiSel(v: Sel, kolom: number, kolumWang: number[]): string {
 export default async function LaporanPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ tab?: string; mula?: string; akhir?: string }>;
+  searchParams?: Promise<{ tab?: string; mula?: string; akhir?: string; julat?: string; jmula?: string; jakhir?: string }>;
 }) {
   const { db, user } = await requireLandlord();
   const skop = await skopHartanahStaf(db, user);
-  const { tab, mula: mulaParam, akhir: akhirParam } = (await searchParams) ?? {};
+  const { tab, mula: mulaParam, akhir: akhirParam, julat, jmula, jakhir } = (await searchParams) ?? {};
+  const jlt = selesaikanJulat(julat, jmula, jakhir);
 
   const tabSah = (TAB.map((t) => t.kod) as string[]).includes(tab ?? "");
   const kod: KodTab = tabSah ? (tab as KodTab) : "rental";
@@ -80,47 +81,19 @@ export default async function LaporanPage({
   const pautan = (format: "csv" | "xlsx") =>
     `/api/v1/laporan/${kod}?format=${format}&mula=${mulaStr}&akhir=${akhirStr}`;
 
-  // Analitik sentiasa dipapar: kutipan sewa 6 bulan + perbelanjaan ikut kategori
-  const sekarang = new Date();
-  const enamBulanLalu = new Date(sekarang.getFullYear(), sekarang.getMonth() - 5, 1);
-  const [invois6Bulan, expenseGroup] = await Promise.all([
-    db.rentInvoice.findMany({
-      where: {
-        period_start: { gte: enamBulanLalu },
-        ...(skop ? { unit: { property_id: { in: skop } } } : {}),
-      },
-      select: { period_start: true, paid_amount: true },
-    }),
-    db.expense.groupBy({
-      by: ["category"],
-      where: skop ? { property_id: { in: skop } } : {},
-      _sum: { amount: true },
-    }),
-  ]);
-
-  const labelBulan = new Intl.DateTimeFormat("ms-MY", { month: "short" });
-  const petaBulan = new Map<string, number>();
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(sekarang.getFullYear(), sekarang.getMonth() - i, 1);
-    petaBulan.set(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, 0);
-  }
-  for (const inv of invois6Bulan) {
-    const kunci = `${inv.period_start.getFullYear()}-${String(inv.period_start.getMonth() + 1).padStart(2, "0")}`;
-    if (petaBulan.has(kunci)) {
-      petaBulan.set(kunci, (petaBulan.get(kunci) ?? 0) + Number(inv.paid_amount));
-    }
-  }
-  const dataCarta: TitikKutipan[] = [...petaBulan.entries()].map(([kunci, jumlah]) => {
-    const [thn, bln] = kunci.split("-").map(Number);
-    return { bulan: labelBulan.format(new Date(thn, bln - 1, 1)), jumlah };
+  // Analitik: kutipan sewa dalam julat terpilih
+  const invois6Bulan = await db.rentInvoice.findMany({
+    where: {
+      period_start: { gte: jlt.mula, lte: jlt.akhir },
+      ...(skop ? { unit: { property_id: { in: skop } } } : {}),
+    },
+    select: { period_start: true, paid_amount: true },
   });
 
-  const PALET = ["#4E9D2D", "#F5821F", "#E5484D", "#2D7FF9", "#8B5CF6", "#EC4899", "#64748B"];
-  const dataDonut: DataDonut[] = expenseGroup.map((g, i) => ({
-    nama: LABEL_EXPENSE[g.category],
-    nilai: Math.round(Number(g._sum.amount ?? 0)),
-    warna: PALET[i % PALET.length],
-  }));
+  const dataCarta: TitikKutipan[] = bucketSiri(
+    jlt,
+    invois6Bulan.map((inv) => ({ tarikh: inv.period_start, jumlah: Number(inv.paid_amount) }))
+  );
 
   return (
     <div className="space-y-6">
@@ -220,25 +193,25 @@ export default async function LaporanPage({
         ))}
       </div>
 
-      {/* Analitik — graph + donut dalam satu baris */}
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Kutipan Sewa 6 Bulan</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CartaKutipan data={dataCarta} labelTooltip="Kutipan Sewa" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Perbelanjaan Mengikut Kategori</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CartaDonut data={dataDonut} labelTengah="Jumlah (RM)" />
-          </CardContent>
-        </Card>
+      {/* Analitik — kutipan sewa */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-muted-foreground">Analitik</h2>
+        <JulatChart
+          julat={julat ?? "6"}
+          mula={fmtTarikh(jlt.mula)}
+          akhir={fmtTarikh(jlt.akhir)}
+          hidden={[{ name: "tab", value: kod }]}
+        />
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Kutipan Sewa</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CartaKutipan data={dataCarta} labelTooltip="Kutipan Sewa" />
+        </CardContent>
+      </Card>
 
       {/* Jadual */}
       <Card>
